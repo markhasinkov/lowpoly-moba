@@ -1,0 +1,112 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { width: 100%; height: 100%; overflow: hidden; background: #0b1410; }
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: #eafaf0;
+  user-select: none;
+}
+
+#game { position: fixed; inset: 0; }
+canvas { display: block; }
+
+/* Top bar */
+#topbar {
+  position: fixed; top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; gap: 22px; padding: 8px 20px;
+  background: rgba(10, 22, 18, 0.78);
+  border: 1px solid rgba(120, 220, 160, 0.25);
+  border-radius: 12px; backdrop-filter: blur(6px);
+  font-size: 17px; font-weight: 600; z-index: 10;
+}
+#topbar .stat { display: flex; align-items: center; gap: 7px; }
+#topbar .label { color: #7fd6a6; font-size: 13px; letter-spacing: .5px; }
+#gold { color: #f5c542; }
+
+/* Minimap */
+#minimap-wrap {
+  position: fixed; right: 14px; bottom: 14px; z-index: 10;
+  padding: 6px; border-radius: 10px;
+  background: rgba(10, 22, 18, 0.82);
+  border: 1px solid rgba(120, 220, 160, 0.3);
+}
+#minimap { display: block; border-radius: 6px; }
+
+/* Bottom HUD */
+#hud {
+  position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 10px; z-index: 10;
+}
+#bars { display: flex; flex-direction: column; gap: 5px; width: 360px; }
+.bar {
+  position: relative; height: 22px; border-radius: 6px; overflow: hidden;
+  background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255,255,255,.15);
+}
+.bar.xp { height: 8px; }
+.fill { height: 100%; width: 0%; transition: width .12s linear; }
+.hp .fill { background: linear-gradient(90deg, #2ecc5e, #57e07e); }
+.mana .fill { background: linear-gradient(90deg, #2a7fd6, #4fb0ff); }
+.xp .fill { background: linear-gradient(90deg, #d6a02a, #ffd24f); }
+.bar-text {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; text-shadow: 0 1px 2px #000;
+}
+
+/* Abilities */
+#abilities { display: flex; gap: 12px; }
+.ability {
+  position: relative; width: 64px; height: 64px; border-radius: 10px;
+  background: linear-gradient(160deg, #1c3a2c, #122318);
+  border: 2px solid #4fd089; overflow: hidden;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,.4);
+}
+.ability .key {
+  position: absolute; top: 3px; left: 6px; font-size: 13px; font-weight: 800; color: #bfffd9;
+}
+.ability .name { font-size: 12px; font-weight: 700; margin-top: 14px; }
+.ability .cd-cover {
+  position: absolute; left: 0; bottom: 0; width: 100%; height: 0%;
+  background: rgba(0,0,0,.66);
+}
+.ability .cd-label {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 800; color: #fff; text-shadow: 0 1px 3px #000;
+}
+.ability.on-cd { border-color: #6a8a78; }
+
+/* Toast */
+#toast {
+  position: fixed; top: 70px; left: 50%; transform: translateX(-50%) translateY(-10px);
+  padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 15px;
+  background: rgba(12, 28, 22, 0.9); border: 1px solid rgba(120,220,160,.35);
+  opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 20;
+  max-width: 80vw; text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Game over */
+#gameover {
+  position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.7); z-index: 30;
+}
+#gameover .panel {
+  text-align: center; padding: 40px 60px; border-radius: 16px;
+  background: linear-gradient(160deg, #14271d, #0c1813);
+  border: 1px solid rgba(120,220,160,.3);
+}
+#gameover h1 { font-size: 52px; margin-bottom: 24px; }
+#restart {
+  padding: 12px 30px; font-size: 17px; font-weight: 700; cursor: pointer;
+  border: none; border-radius: 10px; color: #06160e;
+  background: linear-gradient(90deg, #4fd089, #7fe0a8);
+}
+#restart:hover { filter: brightness(1.1); }
+
+/* Help */
+#help {
+  position: fixed; left: 14px; bottom: 14px; z-index: 10;
+  padding: 10px 14px; border-radius: 10px; font-size: 12px; line-height: 1.6;
+  background: rgba(10, 22, 18, 0.7); border: 1px solid rgba(120,220,160,.2);
+  color: #b8e6cc;
+}
