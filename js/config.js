@@ -103,8 +103,8 @@ export const CAMPS = [
 ];
 
 export const CREEP = {
-  maxHp: 160, attackDamage: 16, attackRange: 6, attackSpeed: 1.0,
-  moveSpeed: 7, armor: 1, goldBounty: 38, xpBounty: 40,
+  maxHp: 150, attackDamage: 16, attackRange: 6, attackSpeed: 1.0,
+  moveSpeed: 7, armor: 1, goldBounty: 45, xpBounty: 48,
   spawnInterval: 22, perWave: 4,
 };
 

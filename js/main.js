@@ -336,15 +336,32 @@ function enemyAutoBuy(hero) {
   }
 }
 
+const XP_RADIUS = 30;        // proximity XP range around a dying enemy unit
+const GOLD_PER_SEC = 1.6;     // passive income so the shop is always reachable
+
+// Gold to the last-hitter; XP to every opposing hero nearby; small assist gold if you were near but didn't last-hit.
+function awardKillRewards(victim, killer) {
+  const bounty = victim.goldBounty || 0;
+  const xp = victim.xpBounty || 60;
+  if (killer && killer.kind === 'hero') killer.gold += bounty;
+  for (const h of [player, enemy]) {
+    if (!h || !h.alive || h.team === victim.team) continue;
+    if (h.pos.distanceTo(victim.pos) > XP_RADIUS) continue;
+    grantXp(h, xp);
+    let gained = 0;
+    if (h === killer) gained = bounty;
+    else { gained = Math.round(bounty * 0.4); h.gold += gained; }
+    if (h === player && gained > 0) {
+      const tag = victim.kind === 'neutral' ? 'лес' : victim.kind === 'tower' ? 'башня' : (h === killer ? 'ластхит' : 'рядом');
+      ui.showToast(`+${gained} золота (${tag})`, 0.8);
+    }
+  }
+}
+
 function onKill(victim, killer) {
   if (victim.kind === 'creep' || victim.kind === 'tower' || victim.kind === 'neutral') {
-    if (killer && killer.kind === 'hero') {
-      killer.gold += victim.goldBounty || 0;
-      grantXp(killer, victim.xpBounty || 60);
-      if (killer === player && victim.kind === 'creep') ui.showToast(`+${victim.goldBounty} золота (ластхит)`, 0.9);
-      if (killer === player && victim.kind === 'neutral') ui.showToast(`+${victim.goldBounty} золота (лес)`, 0.9);
-      if (victim.kind === 'tower') ui.showToast(killer === player ? 'Башня уничтожена! +300' : 'Наша башня пала', 1.8);
-    }
+    awardKillRewards(victim, killer);
+    if (victim.kind === 'tower') ui.showToast(killer === player ? 'Башня уничтожена! +золото' : 'Наша башня пала', 1.8);
     victim.dying = true; victim.deathT = 0;
   } else if (victim.kind === 'hero') {
     if (killer && killer.kind === 'hero') {
@@ -527,6 +544,8 @@ function update(dt) {
   if (waveTimer <= 0) { spawnWave(); waveTimer = CREEP.spawnInterval; }
 
   for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e.slowT > 0 && e.kind !== 'hero') e.slowT -= dt; }
+  if (player.alive) player.gold += GOLD_PER_SEC * dt;
+  if (enemy.alive) enemy.gold += GOLD_PER_SEC * dt;
 
   if (player.alive) {
     tickCooldowns(player, dt); regen(player, dt); surgeTrail(player, dt);
