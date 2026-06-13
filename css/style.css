@@ -110,3 +110,93 @@ canvas { display: block; }
   background: rgba(10, 22, 18, 0.7); border: 1px solid rgba(120,220,160,.2);
   color: #b8e6cc;
 }
+
+/* Shop toggle button in topbar */
+#shop-toggle {
+  margin-left: 6px; padding: 6px 12px; cursor: pointer; font-weight: 700; font-size: 14px;
+  color: #06160e; border: none; border-radius: 8px;
+  background: linear-gradient(90deg, #f5c542, #ffd97a);
+}
+#shop-toggle:hover { filter: brightness(1.08); }
+#shop-toggle .hotkey, .hint, #skillpoints-wrap .label {
+  font-size: 11px; opacity: .8;
+}
+#shop-toggle .hotkey {
+  background: rgba(0,0,0,.25); padding: 1px 5px; border-radius: 4px; margin-left: 2px;
+}
+
+/* HUD center: abilities + skill points */
+#hud-center { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+#skillpoints-wrap {
+  font-size: 13px; color: #ffe08a; visibility: hidden;
+  background: rgba(10,22,18,.7); padding: 3px 10px; border-radius: 8px;
+}
+#skillpoints-wrap .label { color: #cfe9d8; }
+#skillpoints { font-weight: 800; color: #ffd24f; }
+#skillpoints-wrap .hint { color: #9fc8b0; }
+
+/* Ability pips + level-up */
+.ability { overflow: visible; }
+.ability .pips {
+  position: absolute; bottom: 3px; left: 0; width: 100%;
+  display: flex; gap: 3px; justify-content: center;
+}
+.ability .pip {
+  width: 9px; height: 5px; border-radius: 2px;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.25);
+}
+.ability .pip.filled { background: #ffd24f; border-color: #ffd24f; box-shadow: 0 0 4px #ffd24f; }
+.ability .levelup {
+  position: absolute; top: -8px; right: -8px; width: 22px; height: 22px;
+  display: none; align-items: center; justify-content: center;
+  background: #f5c542; color: #06160e; font-weight: 900; font-size: 16px;
+  border-radius: 50%; cursor: pointer; box-shadow: 0 0 8px #f5c542; z-index: 5;
+}
+.ability .levelup:hover { transform: scale(1.12); }
+.ability.learnable { border-color: #ffd24f; box-shadow: 0 0 12px rgba(245,197,66,.5); }
+.ability.locked { filter: grayscale(.6) brightness(.8); }
+
+/* Inventory */
+#inventory {
+  display: grid; grid-template-columns: repeat(3, 38px); grid-template-rows: repeat(2, 38px);
+  gap: 4px; position: fixed; right: 14px; bottom: 215px; z-index: 10;
+  padding: 6px; border-radius: 10px;
+  background: rgba(10, 22, 18, 0.82); border: 1px solid rgba(120,220,160,.3);
+}
+#inventory .slot {
+  width: 38px; height: 38px; border-radius: 7px; font-size: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,.4); border: 1px solid rgba(255,255,255,.12);
+}
+#inventory .slot.filled { background: rgba(60,120,90,.45); border-color: #4fd089; }
+
+/* Shop panel */
+#shop {
+  position: fixed; top: 60px; left: 50%; transform: translateX(-50%);
+  width: min(560px, 92vw); max-height: 70vh; overflow-y: auto; display: none; z-index: 25;
+  background: linear-gradient(160deg, #16271d, #0d1813);
+  border: 1px solid rgba(120,220,160,.35); border-radius: 14px; padding: 14px 16px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.5);
+}
+.shop-head { display: flex; align-items: center; justify-content: space-between; }
+.shop-head h2 { font-size: 19px; }
+#shop-close {
+  background: none; border: none; color: #cfe9d8; font-size: 20px; cursor: pointer;
+}
+#shop-hint { font-size: 12px; margin: 6px 0 10px; }
+#shop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.shop-item {
+  display: flex; align-items: center; gap: 10px; cursor: pointer;
+  padding: 8px 10px; border-radius: 10px;
+  background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1);
+  transition: background .12s, border-color .12s;
+}
+.shop-item:hover { background: rgba(79,208,137,.15); border-color: #4fd089; }
+.shop-item.disabled { opacity: .45; cursor: not-allowed; }
+.shop-item.disabled:hover { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
+.si-icon { font-size: 26px; }
+.si-body { flex: 1; }
+.si-name { font-weight: 700; font-size: 13px; }
+.si-desc { font-size: 11px; color: #a9d0ba; }
+.si-cost { font-weight: 800; font-size: 13px; color: #ffd24f; white-space: nowrap; }
+.si-cost.no { color: #ff7a7a; }

@@ -3,12 +3,15 @@ import { createScene } from './scene.js';
 import {
   createHero, createCreep, createTower, createBase,
 } from './entities.js';
-import { EffectSystem, ABILITIES } from './abilities.js';
+import { EffectSystem } from './abilities.js';
 import {
   updateCreep, updateTower, updateEnemyHero, moveToward, nearestEnemy,
 } from './ai.js';
 import { UI } from './ui.js';
-import { TEAM, WORLD, CREEP, XP_PER_LEVEL, HERO_RESPAWN } from './config.js';
+import {
+  TEAM, WORLD, CREEP, ABILITIES, abilityStat, ITEMS, AI_BUILD_ORDER,
+  XP_PER_LEVEL, HERO_RESPAWN, MAX_LEVEL, MAX_ABILITY_LEVEL, MAX_ITEMS,
+} from './config.js';
 
 const { scene, renderer, camera } = createScene();
 const ui = new UI();
@@ -18,11 +21,9 @@ const fx = new EffectSystem(scene);
 const entities = [];
 function add(e) { scene.add(e.mesh); entities.push(e); return e; }
 
-// Bases
 const radiantBase = add(createBase(TEAM.RADIANT, WORLD.radiantBase.x, WORLD.radiantBase.z));
 const direBase = add(createBase(TEAM.DIRE, WORLD.direBase.x, WORLD.direBase.z));
 
-// Towers along the lane (two per side)
 function lanePoint(t) {
   return {
     x: WORLD.radiantBase.x + (WORLD.direBase.x - WORLD.radiantBase.x) * t,
@@ -36,16 +37,26 @@ add(createTower(TEAM.RADIANT, tRad1.x, tRad1.z));
 add(createTower(TEAM.DIRE, tDire1.x, tDire1.z));
 add(createTower(TEAM.DIRE, tDire2.x, tDire2.z));
 
-// Heroes
+// ---- Heroes ----
+function initHero(hero) {
+  hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.buffE = 0;
+  hero.abilityLevels = { Q: 0, W: 0, E: 0 };
+  hero.skillPoints = 1; // level-1 point
+  hero.items = [];
+  hero.aiBuyIndex = 0;
+}
+
 const player = add(createHero(TEAM.RADIANT));
 player.pos.set(WORLD.radiantBase.x + 4, 0, WORLD.radiantBase.z + 4);
 player.mesh.position.copy(player.pos);
-player.cdQ = 0; player.cdW = 0; player.cdE = 0; player.buffE = 0;
+initHero(player);
 
 const enemy = add(createHero(TEAM.DIRE));
 enemy.pos.set(WORLD.direBase.x - 4, 0, WORLD.direBase.z - 4);
 enemy.mesh.position.copy(enemy.pos);
-enemy.cdQ = 0; enemy.cdW = 0; enemy.cdE = 0; enemy.state = 'push';
+initHero(enemy);
+enemy.state = 'push';
+spendEnemySkillPoints(enemy); // learn level-1 ability
 
 // ---- Camera follow ----
 const camOffset = new THREE.Vector3(0, 46, 38);
@@ -76,8 +87,7 @@ renderer.domElement.addEventListener('pointerdown', (e) => {
   if (!player.alive || gameEnded) return;
   const hit = screenToGround(e.clientX, e.clientY);
   if (!hit) return;
-  if (e.button === 2) {
-    // right-click: move or attack-target
+  if (e.button === 2 || e.button === 0) {
     const foe = nearestEnemyAtPoint(hit, 3.5);
     if (foe) { player.attackTarget = foe; player.target = null; }
     else { player.target = hit.clone(); player.attackTarget = null; }
@@ -89,12 +99,20 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 });
 
 window.addEventListener('keydown', (e) => {
-  if (gameEnded || !player.alive) return;
   const k = e.key.toLowerCase();
+  if (k === 'b') { ui.toggleShop(); return; }
+  if (gameEnded || !player.alive) return;
+  if (e.shiftKey && (k === 'q' || k === 'w' || k === 'e')) {
+    levelAbility(player, k.toUpperCase());
+    return;
+  }
   if (k === 'q') castAbility('Q');
   else if (k === 'w') castAbility('W');
   else if (k === 'e') castAbility('E');
-  else if (k === 's') { player.target = null; player.attackTarget = null; } // stop
+  else if (k === '1') levelAbility(player, 'Q');
+  else if (k === '2') levelAbility(player, 'W');
+  else if (k === '3') levelAbility(player, 'E');
+  else if (k === 's') { player.target = null; player.attackTarget = null; }
 });
 
 function nearestEnemyAtPoint(point, radius) {
@@ -107,49 +125,112 @@ function nearestEnemyAtPoint(point, radius) {
   return best;
 }
 
+// ---- Progression: abilities & items ----
+function levelAbility(hero, key) {
+  if (hero.skillPoints <= 0) { if (hero === player) ui.showToast('Нет очков умений', 1); return; }
+  if (hero.abilityLevels[key] >= MAX_ABILITY_LEVEL) { if (hero === player) ui.showToast('Способность максимальна', 1); return; }
+  hero.abilityLevels[key]++;
+  hero.skillPoints--;
+  if (hero === player) {
+    ui.showToast(`${ABILITIES[key].name} → ур.${hero.abilityLevels[key]}`, 1.2);
+    refreshHud();
+  }
+}
+
+function applyItemStats(hero, stats, sign = 1) {
+  for (const [k, v] of Object.entries(stats)) {
+    const delta = v * sign;
+    if (k === 'maxHp') { hero.maxHp += delta; hero.hp += delta; }
+    else if (k === 'maxMana') { hero.maxMana += delta; hero.mana += delta; }
+    else if (k === 'moveSpeed') {
+      hero.baseMoveSpeed += delta;
+      if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed;
+      else hero.moveSpeed += delta;
+    } else {
+      hero[k] = (hero[k] || 0) + delta;
+    }
+  }
+}
+
+function nearOwnFountain(hero) {
+  const base = hero.team === 'radiant' ? WORLD.radiantBase : WORLD.direBase;
+  return Math.hypot(hero.pos.x - base.x, hero.pos.z - base.z) <= WORLD.fountainRadius;
+}
+
+function buyItem(hero, item) {
+  if (hero.items.length >= MAX_ITEMS) { if (hero === player) ui.showToast('Инвентарь полон', 1.2); return false; }
+  if (hero.gold < item.cost) { if (hero === player) ui.showToast('Недостаточно золота', 1.2); return false; }
+  if (hero === player && !nearOwnFountain(hero)) { ui.showToast('Покупать можно только у своей базы (фонтан)', 1.6); return false; }
+  hero.gold -= item.cost;
+  hero.items.push(item.id);
+  applyItemStats(hero, item.stats, 1);
+  if (hero === player) { ui.showToast(`Куплено: ${item.name}`, 1.2); refreshHud(); }
+  return true;
+}
+
+ui.callbacks = {
+  onBuy: (itemId) => { const it = ITEMS.find(i => i.id === itemId); if (it) buyItem(player, it); },
+  onLevel: (key) => levelAbility(player, key),
+};
+
+function refreshHud() {
+  ui.updateHero(player);
+  ui.updateAbilities(player);
+  ui.updateInventory(player);
+  ui.renderShop(ITEMS, player, nearOwnFountain(player));
+}
+
 // ---- Abilities ----
 function castAbility(key) {
-  const a = ABILITIES[key];
+  const lvl = player.abilityLevels[key];
+  if (lvl < 1) { ui.showToast('Сначала изучи способность (1/2/3 или Shift)', 1.4); return; }
+  const s = abilityStat(key, lvl);
   const cdKey = 'cd' + key;
-  if (player[cdKey] > 0 || player.mana < a.manaCost) {
-    if (player.mana < a.manaCost) ui.showToast('Недостаточно маны', 1);
-    return;
-  }
+  if (player[cdKey] > 0) return;
+  if (player.mana < s.manaCost) { ui.showToast('Недостаточно маны', 1); return; }
+
   if (key === 'Q') {
     const dir = new THREE.Vector3().subVectors(pointerWorld, player.pos).setY(0);
     if (dir.lengthSq() < 0.01) return;
     player.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-    fx.spawnBolt(player, dir, entities);
+    fx.spawnBolt(player, dir, entities, s.damage);
   } else if (key === 'W') {
-    const ab = fx.spawnNova(player);
+    fx.spawnNova(player, s.radius);
     for (const e of entities) {
-      if (e.alive && e.team !== player.team && player.pos.distanceTo(e.pos) <= ab.radius) {
-        applyDamage(e, ab.damage, player);
+      if (e.alive && e.team !== player.team && player.pos.distanceTo(e.pos) <= s.radius) {
+        applyDamage(e, s.damage, player);
       }
     }
   } else if (key === 'E') {
-    player.buffE = a.duration;
-    player.moveSpeed = player.baseMoveSpeed + a.speedBonus;
+    player.buffE = s.duration;
+    player.moveSpeed = player.baseMoveSpeed + s.speedBonus;
     ui.showToast('Рывок!', 1);
   }
-  player.mana -= a.manaCost;
-  player[cdKey] = a.cooldown;
+  player.mana -= s.manaCost;
+  player[cdKey] = s.cooldown;
 }
 
-// AI ability casts
 function aiCastNova(hero) {
-  const a = fx.spawnNova(hero);
+  const lvl = hero.abilityLevels.W;
+  if (lvl < 1) return;
+  const s = abilityStat('W', lvl);
+  if (hero.mana < s.manaCost) return;
+  fx.spawnNova(hero, s.radius);
   for (const e of entities) {
-    if (e.alive && e.team !== hero.team && hero.pos.distanceTo(e.pos) <= a.radius) {
-      applyDamage(e, a.damage, hero);
+    if (e.alive && e.team !== hero.team && hero.pos.distanceTo(e.pos) <= s.radius) {
+      applyDamage(e, s.damage, hero);
     }
   }
-  hero.mana -= ABILITIES.W.manaCost; hero.cdW = ABILITIES.W.cooldown;
+  hero.mana -= s.manaCost; hero.cdW = s.cooldown;
 }
 function aiCastBolt(hero, dir) {
+  const lvl = hero.abilityLevels.Q;
+  if (lvl < 1) return;
+  const s = abilityStat('Q', lvl);
+  if (hero.mana < s.manaCost) return;
   hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-  fx.spawnBolt(hero, dir, entities);
-  hero.mana -= ABILITIES.Q.manaCost; hero.cdQ = ABILITIES.Q.cooldown;
+  fx.spawnBolt(hero, dir, entities, s.damage);
+  hero.mana -= s.manaCost; hero.cdQ = s.cooldown;
 }
 
 // ---- Combat ----
@@ -157,7 +238,6 @@ function attack(attacker, target) {
   if (attacker.attackCd > 0 || !target.alive) return;
   applyDamage(target, attacker.attackDamage, attacker);
   attacker.attackCd = 1 / attacker.attackSpeed;
-  // muzzle pulse
   attacker.mesh.scale.y = 1.08;
 }
 
@@ -169,13 +249,47 @@ function applyDamage(target, amount, attacker) {
 
 function grantXp(hero, amount) {
   hero.xp += amount;
-  const newLevel = Math.min(18, 1 + Math.floor(hero.xp / XP_PER_LEVEL));
+  const newLevel = Math.min(MAX_LEVEL, 1 + Math.floor(hero.xp / XP_PER_LEVEL));
   while (hero.level < newLevel) {
     hero.level++;
     hero.maxHp += 55; hero.hp += 55;
     hero.maxMana += 20; hero.mana += 20;
     hero.attackDamage += 6;
-    if (hero === player) ui.showToast(`Уровень ${hero.level}!`, 1.6);
+    hero.skillPoints++;
+    if (hero === player) ui.showToast(`Уровень ${hero.level}! +1 очко умений`, 1.6);
+    else spendEnemySkillPoints(hero);
+  }
+  if (hero === player) refreshHud();
+}
+
+// Enemy AI: spend skill points by priority and auto-buy items
+function spendEnemySkillPoints(hero) {
+  const order = ['Q', 'W', 'Q', 'E', 'Q', 'W', 'Q', 'W', 'E', 'W', 'E', 'E'];
+  while (hero.skillPoints > 0) {
+    let learned = false;
+    for (const key of order) {
+      if (hero.abilityLevels[key] < MAX_ABILITY_LEVEL) {
+        // respect natural progression: don't overspend one ability past availability
+        hero.abilityLevels[key]++;
+        hero.skillPoints--;
+        learned = true;
+        break;
+      }
+    }
+    if (!learned) break;
+  }
+}
+
+function enemyAutoBuy(hero) {
+  if (hero.items.length >= MAX_ITEMS) return;
+  const nextId = AI_BUILD_ORDER[hero.aiBuyIndex];
+  if (!nextId) return;
+  const item = ITEMS.find(i => i.id === nextId);
+  if (item && hero.gold >= item.cost) {
+    hero.gold -= item.cost;
+    hero.items.push(item.id);
+    applyItemStats(hero, item.stats, 1);
+    hero.aiBuyIndex++;
   }
 }
 
@@ -188,7 +302,6 @@ function onKill(victim, killer) {
       if (killer === player && victim.kind === 'creep') ui.showToast(`+${victim.goldBounty} золота (ластхит)`, 0.9);
       if (victim.kind === 'tower') ui.showToast(killer === player ? 'Башня уничтожена! +300' : 'Наша башня пала', 1.8);
     }
-    // remove from list
     removeEntity(victim);
   } else if (victim.kind === 'hero') {
     if (killer && killer.kind === 'hero') {
@@ -244,15 +357,16 @@ function tickCooldowns(hero, dt) {
 }
 
 function regen(e, dt) {
-  if (e.hpRegen) e.hp = Math.min(e.maxHp, e.hp + e.hpRegen * dt);
-  if (e.manaRegen) e.mana = Math.min(e.maxMana, e.mana + e.manaRegen * dt);
+  let hpReg = e.hpRegen || 0, mpReg = e.manaRegen || 0;
+  if (e.kind === 'hero' && nearOwnFountain(e)) { hpReg += e.maxHp * 0.12; mpReg += e.maxMana * 0.1; }
+  if (hpReg) e.hp = Math.min(e.maxHp, e.hp + hpReg * dt);
+  if (mpReg) e.mana = Math.min(e.maxMana, e.mana + mpReg * dt);
 }
 
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
   if (!gameEnded) update(dt);
-  // billboards
   for (const e of entities) {
     if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
     if (e.mesh.scale.y > 1) e.mesh.scale.y = Math.max(1, e.mesh.scale.y - dt * 0.6);
@@ -261,6 +375,7 @@ function animate() {
   renderer.render(scene, camera);
 }
 
+let hudTimer = 0;
 function update(dt) {
   matchTime += dt;
   ui.updateTimer(matchTime);
@@ -268,10 +383,9 @@ function update(dt) {
   waveTimer -= dt;
   if (waveTimer <= 0) { spawnWave(); waveTimer = CREEP.spawnInterval; }
 
-  // attack cooldown tick
   for (const e of entities) if (e.attackCd > 0) e.attackCd -= dt;
 
-  // Player control
+  // Player
   if (player.alive) {
     tickCooldowns(player, dt);
     regen(player, dt);
@@ -293,10 +407,11 @@ function update(dt) {
     if (player.respawnTimer <= 0) respawnHero(player);
   }
 
-  // Enemy hero AI
+  // Enemy
   if (enemy.alive) {
     tickCooldowns(enemy, dt);
     regen(enemy, dt);
+    enemyAutoBuy(enemy);
     updateEnemyHero(enemy, { entities, player }, dt, attack, aiCastNova, aiCastBolt);
     enemy.mesh.position.copy(enemy.pos);
   } else {
@@ -317,11 +432,17 @@ function update(dt) {
 
   fx.update(dt, entities, applyDamage);
 
-  // UI
+  // UI (throttle heavy HUD updates a bit)
+  hudTimer -= dt;
   ui.updateHero(player);
-  ui.updateAbilities({ Q: player.cdQ, W: player.cdW, E: player.cdE });
+  ui.updateAbilities(player);
   ui.drawMinimap(entities, player, WORLD);
   ui.updateToast(dt);
+  if (hudTimer <= 0) {
+    ui.updateInventory(player);
+    if (ui.shopOpen) ui.renderShop(ITEMS, player, nearOwnFountain(player));
+    hudTimer = 0.3;
+  }
 
   if (!player.alive) ui.showToast(`Возрождение через ${Math.ceil(player.respawnTimer)}с`, 0.4);
 }
@@ -333,5 +454,8 @@ function endGame(playerWon) {
 
 document.getElementById('restart')?.addEventListener('click', () => location.reload());
 
-ui.showToast('ЛКМ/ПКМ — движение и атака. Q/W/E — способности. Уничтожь вражеский трон!', 4);
+ui.renderShop(ITEMS, player, nearOwnFountain(player));
+ui.updateInventory(player);
+ui.updateAbilities(player);
+ui.showToast('ЛКМ/ПКМ — идти/атаковать. Q/W/E — способности, 1/2/3 (или Shift) — прокачать. B — магазин.', 5);
 animate();

@@ -9,7 +9,7 @@ export class EffectSystem {
     this.effects = []; // transient visuals (expanding rings, etc.)
   }
 
-  spawnBolt(caster, dir, enemies) {
+  spawnBolt(caster, dir, enemies, damage) {
     const a = ABILITIES.Q;
     const geo = new THREE.SphereGeometry(0.6, 8, 8);
     const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
@@ -21,13 +21,14 @@ export class EffectSystem {
     this.scene.add(m);
     this.projectiles.push({
       mesh: m, dir: dir.clone().normalize(), speed: a.speed,
-      traveled: 0, range: a.range, damage: a.damage,
+      traveled: 0, range: a.range, damage: damage != null ? damage : a.damage,
       team: caster.team, caster, enemies, radius: 1.6,
     });
   }
 
-  spawnNova(caster) {
+  spawnNova(caster, radius) {
     const a = ABILITIES.W;
+    const r = radius != null ? radius : a.radius;
     const ring = new THREE.Mesh(
       new THREE.RingGeometry(0.5, 1.2, 24),
       new THREE.MeshBasicMaterial({
@@ -38,8 +39,8 @@ export class EffectSystem {
     ring.rotation.x = -Math.PI / 2;
     ring.position.copy(caster.pos); ring.position.y = 0.2;
     this.scene.add(ring);
-    this.effects.push({ mesh: ring, t: 0, dur: 0.5, maxScale: a.radius });
-    return a;
+    this.effects.push({ mesh: ring, t: 0, dur: 0.5, maxScale: r });
+    return { radius: r, damage: a.damage };
   }
 
   update(dt, allEntities, onDamage) {

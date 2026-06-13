@@ -22,6 +22,7 @@
     <div class="stat"><span class="label">💰</span><span id="gold">0</span></div>
     <div class="stat"><span class="label">LVL</span><span id="level">1</span></div>
     <div class="stat"><span class="label">K/D</span><span id="kda">0 / 0</span></div>
+    <button id="shop-toggle">🛒 Магазин <span class="hotkey">B</span></button>
   </div>
 
   <!-- Minimap -->
@@ -36,11 +37,45 @@
       <div class="bar mana"><div id="mana-fill" class="fill"></div><span id="mana-text" class="bar-text">0 / 0</span></div>
       <div class="bar xp"><div id="xp-fill" class="fill"></div></div>
     </div>
-    <div id="abilities">
-      <div class="ability" id="ab-Q"><div class="key">Q</div><div class="name">Bolt</div><div class="cd-cover"></div><div class="cd-label"></div></div>
-      <div class="ability" id="ab-W"><div class="key">W</div><div class="name">Nova</div><div class="cd-cover"></div><div class="cd-label"></div></div>
-      <div class="ability" id="ab-E"><div class="key">E</div><div class="name">Surge</div><div class="cd-cover"></div><div class="cd-label"></div></div>
+
+    <div id="hud-center">
+      <div id="abilities">
+        <div class="ability locked" id="ab-Q">
+          <div class="key">Q</div><div class="name">Bolt</div>
+          <div class="cd-cover"></div><div class="cd-label"></div>
+          <div class="levelup">+</div>
+          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+        </div>
+        <div class="ability locked" id="ab-W">
+          <div class="key">W</div><div class="name">Nova</div>
+          <div class="cd-cover"></div><div class="cd-label"></div>
+          <div class="levelup">+</div>
+          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+        </div>
+        <div class="ability locked" id="ab-E">
+          <div class="key">E</div><div class="name">Surge</div>
+          <div class="cd-cover"></div><div class="cd-label"></div>
+          <div class="levelup">+</div>
+          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+        </div>
+      </div>
+      <div id="skillpoints-wrap"><span class="label">Очки умений:</span> <span id="skillpoints">0</span> <span class="hint">(1/2/3 или Shift)</span></div>
     </div>
+
+    <div id="inventory">
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div>
+      <div class="slot"></div><div class="slot"></div><div class="slot"></div>
+    </div>
+  </div>
+
+  <!-- Shop -->
+  <div id="shop">
+    <div class="shop-head">
+      <h2>🛒 Магазин артефактов</h2>
+      <button id="shop-close">✕</button>
+    </div>
+    <div id="shop-hint"></div>
+    <div id="shop-grid"></div>
   </div>
 
   <div id="toast"></div>
@@ -56,7 +91,8 @@
     <strong>Управление</strong><br/>
     ПКМ / ЛКМ — идти / атаковать<br/>
     Q W E — способности (по курсору)<br/>
-    S — стоп
+    1 2 3 / Shift+QWE — прокачать умение<br/>
+    B — магазин · S — стоп
   </div>
 
   <script type="module" src="js/main.js"></script>

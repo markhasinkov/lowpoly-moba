@@ -69,6 +69,22 @@ function buildArena(scene) {
   lane.rotation.z = -angle;
   scene.add(lane);
 
+  // Fountain zones around each base (shop + fast heal)
+  for (const [base, col] of [[WORLD.radiantBase, COLORS.radiant], [WORLD.direBase, COLORS.dire]]) {
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(WORLD.fountainRadius - 0.6, WORLD.fountainRadius, 40),
+      new THREE.MeshBasicMaterial({ color: COLORS.fountain, side: THREE.DoubleSide, transparent: true, opacity: 0.5 })
+    );
+    ring.rotation.x = -Math.PI / 2; ring.position.set(base.x, 0.04, base.z);
+    scene.add(ring);
+    const disc = new THREE.Mesh(
+      new THREE.CircleGeometry(WORLD.fountainRadius, 40),
+      new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.08 })
+    );
+    disc.rotation.x = -Math.PI / 2; disc.position.set(base.x, 0.035, base.z);
+    scene.add(disc);
+  }
+
   // River across the middle (perpendicular)
   const riverGeo = new THREE.PlaneGeometry(s * 1.4, 12, 1, 1);
   const river = new THREE.Mesh(riverGeo, new THREE.MeshStandardMaterial({
