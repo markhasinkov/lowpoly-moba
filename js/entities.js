@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { TEAM, COLORS, CREEP, TOWER, BASE, NEUTRAL, HERO_ANIMS } from './config.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
+import { creepAssets } from './assets.js';
+
+const CREEP_ANIMS = { idle: 'Idle', run: 'Running_A', death: 'Death_A', hit: 'Hit_A', attack: '1H_Melee_Attack_Chop' };
 
 function mat(color, flat = true) {
   return new THREE.MeshStandardMaterial({ color, flatShading: flat, roughness: 0.85, metalness: 0.1 });
@@ -202,6 +205,7 @@ export function createNeutral(x, z) {
 }
 
 export function createCreep(team, x, z) {
+  if (creepAssets.minion) return createGLTFCreep(team, x, z, creepAssets.minion);
   const color = COLORS[team];
   const g = new THREE.Group();
   const accentC = team === 'radiant' ? 0x2b6fbf : 0xa83232;
@@ -228,6 +232,49 @@ export function createCreep(team, x, z) {
     goldBounty: CREEP.goldBounty, xpBounty: CREEP.xpBounty,
     radius: 0.8, x, z,
   });
+}
+
+function createGLTFCreep(team, x, z, asset) {
+  const g = new THREE.Group();
+  const model = cloneSkinned(asset.scene);
+  let box = new THREE.Box3().setFromObject(model);
+  const h = (box.max.y - box.min.y) || 1;
+  model.scale.setScalar(3.4 / h);
+  box = new THREE.Box3().setFromObject(model);
+  model.position.y = -box.min.y;
+  const teamTint = new THREE.Color(team === 'radiant' ? 0x8fb8ff : 0xff8f8f);
+  const flashMeshes = [];
+  model.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true; o.frustumCulled = false;
+      if (o.material) {
+        o.material = o.material.clone();
+        if (o.material.color) o.material.color.multiply(teamTint);
+        flashMeshes.push(o);
+      }
+    }
+  });
+  g.add(model);
+  const bar = makeBar(2); bar.position.y = 4.0; g.add(bar);
+
+  const mixer = new THREE.AnimationMixer(model);
+  const byName = {}; asset.animations.forEach((a) => { byName[a.name] = a; });
+  const actions = {};
+  for (const [k, name] of Object.entries(CREEP_ANIMS)) { if (byName[name]) actions[k] = mixer.clipAction(byName[name]); }
+  if (actions.idle) actions.idle.play();
+
+  const ent = new Entity({
+    kind: 'creep', team, mesh: g, hpBar: bar,
+    hp: CREEP.maxHp, maxHp: CREEP.maxHp,
+    moveSpeed: CREEP.moveSpeed, baseMoveSpeed: CREEP.moveSpeed,
+    attackRange: CREEP.attackRange, attackDamage: CREEP.attackDamage,
+    attackSpeed: CREEP.attackSpeed, armor: CREEP.armor,
+    goldBounty: CREEP.goldBounty, xpBounty: CREEP.xpBounty,
+    radius: 0.8, x, z,
+  });
+  ent.isGLTF = true; ent.mixer = mixer; ent.actions = actions; ent.currentKey = 'idle';
+  ent.flashMeshes = flashMeshes; ent.oneShotT = 0; ent._deathStarted = false;
+  return ent;
 }
 
 export function createTower(team, x, z) {

@@ -8,18 +8,28 @@ const CHAR_FILE = {
 };
 
 export const heroAssets = {}; // id -> { scene, animations }
+export const creepAssets = {}; // 'minion' -> { scene, animations }
 
 const loader = new GLTFLoader();
 
 export async function preloadHeroes(onProgress) {
   const ids = Object.keys(CHAR_FILE);
+  const total = ids.length + 1;
   let done = 0;
   for (const id of ids) {
     const gltf = await loader.loadAsync(`assets/characters/${CHAR_FILE[id]}.glb`);
     heroAssets[id] = { scene: gltf.scene, animations: gltf.animations };
     done++;
-    if (onProgress) onProgress(done, ids.length);
+    if (onProgress) onProgress(done, total);
   }
+  try {
+    const m = await loader.loadAsync('assets/characters/Skeleton_Minion.glb');
+    creepAssets.minion = { scene: m.scene, animations: m.animations };
+  } catch (e) {
+    console.warn('Не удалось загрузить модель крипа', e);
+  }
+  done++;
+  if (onProgress) onProgress(done, total);
   return heroAssets;
 }
 
