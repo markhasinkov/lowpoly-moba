@@ -64,32 +64,90 @@ export class Entity {
   }
 }
 
+function buildGuardian(color, accent) {
+  const g = new THREE.Group();
+  const skin = 0xf0d6b0, steel = 0x9aa0a8;
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(2.0, 2.2, 1.3), mat(color));
+  torso.position.y = 2.1; torso.castShadow = true; g.add(torso);
+  const belt = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.5, 1.4), mat(0x4a3520));
+  belt.position.y = 1.1; g.add(belt);
+  const lP = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 1.5), mat(accent));
+  lP.position.set(-1.2, 3.1, 0); lP.castShadow = true; g.add(lP);
+  const rP = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.7, 1.5), mat(accent));
+  rP.position.set(1.2, 3.1, 0); rP.castShadow = true; g.add(rP);
+  const head = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), mat(steel));
+  head.position.y = 3.9; head.castShadow = true; g.add(head);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.25, 1.02), mat(accent));
+  visor.position.y = 3.95; g.add(visor);
+  const shield = new THREE.Mesh(new THREE.BoxGeometry(0.3, 2.2, 1.7), mat(steel));
+  shield.position.set(-1.7, 2.2, 0); shield.rotation.x = 0.1; shield.castShadow = true; g.add(shield);
+  const shieldBoss = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0), mat(accent));
+  shieldBoss.position.set(-1.85, 2.2, 0); g.add(shieldBoss);
+  // warhammer
+  const weapon = new THREE.Group();
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 3.2, 6), mat(0x6b4a2b));
+  handle.position.y = 1.2; weapon.add(handle);
+  const hammerHead = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 1.1), mat(steel));
+  hammerHead.position.y = 2.7; weapon.add(hammerHead);
+  weapon.position.set(1.3, 2.0, 0.2); weapon.castShadow = true; g.add(weapon);
+  return { group: g, weapon, flashParts: [torso, head, lP, rP] };
+}
+
+function buildMage(color, accent) {
+  const g = new THREE.Group();
+  const robe = new THREE.Mesh(new THREE.ConeGeometry(1.35, 2.8, 9), mat(color));
+  robe.position.y = 1.4; robe.castShadow = true; g.add(robe);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.75, 1.3, 8), mat(color));
+  torso.position.y = 3.0; torso.castShadow = true; g.add(torso);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 0), mat(0xf0d6b0));
+  head.position.y = 3.95; head.castShadow = true; g.add(head);
+  const hat = new THREE.Mesh(new THREE.ConeGeometry(0.9, 1.7, 9), mat(accent));
+  hat.position.y = 5.0; hat.castShadow = true; g.add(hat);
+  // staff with orb
+  const weapon = new THREE.Group();
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 4.0, 6), mat(0x7a5a32));
+  shaft.position.y = 1.6; weapon.add(shaft);
+  const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.45, 0),
+    new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 1.1, flatShading: true }));
+  orb.position.y = 3.7; weapon.add(orb);
+  weapon.position.set(1.05, 1.4, 0.25); g.add(weapon);
+  return { group: g, weapon, flashParts: [robe, torso, head] };
+}
+
+function buildAssassin(color, accent) {
+  const g = new THREE.Group();
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.78, 2.0, 7), mat(color));
+  torso.position.y = 2.0; torso.castShadow = true; g.add(torso);
+  const cape = new THREE.Mesh(new THREE.ConeGeometry(1.0, 2.4, 5), mat(color === COLORS.radiant ? 0x1f6fbf : 0xb02b2b));
+  cape.position.set(0, 2.0, -0.6); cape.castShadow = true; g.add(cape);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.68, 0), mat(0xf0d6b0));
+  head.position.y = 3.4; head.castShadow = true; g.add(head);
+  const hood = new THREE.Mesh(new THREE.ConeGeometry(0.95, 1.4, 7), mat(accent));
+  hood.position.y = 3.7; hood.rotation.x = -0.15; hood.castShadow = true; g.add(hood);
+  const weapon = new THREE.Group();
+  const bladeR = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.3, 4), mat(0xdfe6ee));
+  bladeR.position.y = 0.6; weapon.add(bladeR);
+  weapon.position.set(0.95, 2.3, 0.3); weapon.rotation.x = Math.PI; g.add(weapon);
+  const bladeL = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.3, 4), mat(0xdfe6ee));
+  bladeL.position.set(-0.95, 1.7, 0.3); bladeL.rotation.x = Math.PI; g.add(bladeL);
+  return { group: g, weapon, flashParts: [torso, head, cape] };
+}
+
 export function createHero(team, def) {
   const color = COLORS[team];
   const accent = def.accent;
-  const g = new THREE.Group();
+  const built = def.id === 'mage' ? buildMage(color, accent)
+    : def.id === 'assassin' ? buildAssassin(color, accent)
+    : buildGuardian(color, accent);
+  const g = built.group;
+  if (built.weapon) { built.weapon.rotation.z = Math.PI / 7; g.userData.weapon = built.weapon; }
+  g.userData.flashParts = built.flashParts;
 
-  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 2.2, 7), mat(color));
-  torso.position.y = 2.1; torso.castShadow = true; g.add(torso);
+  // class emblem gem
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0),
+    new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.8, flatShading: true }));
+  gem.position.y = 6.0; g.add(gem); g.userData.gem = gem;
 
-  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8, 0), mat(0xf0d6b0));
-  head.position.y = 3.6; head.castShadow = true; g.add(head);
-
-  // shoulders / cape accent (team-tinted)
-  const cape = new THREE.Mesh(new THREE.ConeGeometry(1.3, 2.4, 5), mat(color === COLORS.radiant ? 0x1f6fbf : 0xb02b2b));
-  cape.position.set(0, 2.0, -0.7); cape.castShadow = true; g.add(cape);
-
-  // hero-specific accent gem floating above (distinguishes the 3 heroes)
-  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0),
-    new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.7, flatShading: true }));
-  gem.position.y = 4.9; g.add(gem);
-  g.userData.gem = gem;
-
-  // weapon — longer for casters, blade for the rest
-  const weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, def.id === 'mage' ? 3.6 : 3, 5), mat(0xcfcfcf));
-  weapon.position.set(1.1, 2.4, 0.2); weapon.rotation.z = Math.PI / 7; g.add(weapon);
-  g.userData.weapon = weapon;
-  g.userData.flashParts = [torso, head, cape];
   const aura = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.16, 8, 24),
     new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.85 }));
   aura.rotation.x = -Math.PI / 2; aura.position.y = 0.35; aura.visible = false;
@@ -100,7 +158,7 @@ export function createHero(team, def) {
   ring.position.y = 0.11; g.add(ring);
 
   const bar = makeBar(4);
-  bar.position.y = 5.6; g.add(bar);
+  bar.position.y = 6.6; g.add(bar);
 
   return new Entity({
     kind: 'hero', team, mesh: g, hpBar: bar,
@@ -111,9 +169,11 @@ export function createHero(team, def) {
     attackSpeed: def.attackSpeed, armor: def.armor,
     hpRegen: def.hpRegen, manaRegen: def.manaRegen,
     name: def.name, role: def.role, defId: def.id,
-    abilityMods: def.abilityMods, accent,
+    attackType: def.attackType || 'melee', projectile: def.projectile || null,
+    abilities: def.abilities, accent,
     level: 1, xp: 0, gold: 600, kills: 0, deaths: 0,
     respawnTimer: 0, radius: 1.4,
+    slowT: 0,
     x: 0, z: 0,
   });
 }

@@ -27,28 +27,60 @@ export const WORLD = {
   fountainRadius: 16, // shop + fast heal zone around own base
 };
 
-// Selectable heroes. Team color stays Radiant/Dire; `accent` distinguishes the model.
+// Selectable heroes — each has a distinct model, attack type and a unique 3-ability kit.
 export const HERO_DEFS = [
   {
     id: 'guardian', name: 'Guardian', role: 'Танк', accent: 0x8fe0ff,
-    desc: 'Живучий боец: много HP и брони, мощная Nova.',
-    maxHp: 780, hpRegen: 3.2, maxMana: 260, manaRegen: 2.5,
-    moveSpeed: 10.5, attackRange: 7, attackDamage: 48, attackSpeed: 0.95, armor: 6,
-    abilityMods: { Q: 0.9, W: 1.35, E: 0.9 },
+    desc: 'Ближний бой. Много HP/брони, защитный баф и рывок-таран.',
+    maxHp: 820, hpRegen: 3.4, maxMana: 260, manaRegen: 2.6,
+    moveSpeed: 10.5, attackRange: 6, attackDamage: 50, attackSpeed: 0.95, armor: 7,
+    attackType: 'melee',
+    abilities: {
+      Q: { key: 'Q', name: 'Удар о землю', icon: '🌋', type: 'aoe', manaCost: 70, cooldown: 6,
+        damage: 70, damagePerLevel: 35, radius: 9, radiusPerLevel: 0.8,
+        desc: 'Смаш вокруг себя, урон всем рядом.' },
+      W: { key: 'W', name: 'Бастион', icon: '🛡️', type: 'buff_guard', manaCost: 80, cooldown: 16,
+        armorBonus: 8, armorPerLevel: 4, healPerSec: 24, healPerLevel: 14, duration: 5,
+        desc: '+броня и лечение в течение 5с.' },
+      E: { key: 'E', name: 'Рывок-таран', icon: '💥', type: 'dash', manaCost: 70, cooldown: 12,
+        damage: 60, damagePerLevel: 30, range: 26, radius: 6,
+        desc: 'Рывок к курсору, урон в точке прибытия.' },
+    },
   },
   {
     id: 'mage', name: 'Arcanist', role: 'Маг', accent: 0xc08bff,
-    desc: 'Стеклянная пушка: огромный урон Bolt и запас маны.',
-    maxHp: 540, hpRegen: 2.0, maxMana: 440, manaRegen: 4.5,
-    moveSpeed: 10.5, attackRange: 11, attackDamage: 44, attackSpeed: 0.9, armor: 3,
-    abilityMods: { Q: 1.45, W: 1.15, E: 0.9 },
+    desc: 'Дальний кастер. Бьёт с дистанции, сильные снаряды и блинк.',
+    maxHp: 540, hpRegen: 2.0, maxMana: 460, manaRegen: 4.8,
+    moveSpeed: 10.5, attackRange: 17, attackDamage: 40, attackSpeed: 0.85, armor: 3,
+    attackType: 'ranged', projectile: { speed: 40, color: 0xc08bff, radius: 1.2 },
+    abilities: {
+      Q: { key: 'Q', name: 'Ледяная стрела', icon: '❄️', type: 'projectile', manaCost: 70, cooldown: 4,
+        damage: 110, damagePerLevel: 50, range: 40, speed: 46, slow: { factor: 0.5, dur: 1.8 },
+        desc: 'Дальний снаряд, бьёт и замедляет.' },
+      W: { key: 'W', name: 'Метель', icon: '🌀', type: 'aoe', manaCost: 100, cooldown: 9,
+        damage: 70, damagePerLevel: 35, radius: 13, radiusPerLevel: 1,
+        desc: 'Большой взрыв вокруг себя.' },
+      E: { key: 'E', name: 'Блинк', icon: '✨', type: 'blink', manaCost: 60, cooldown: 11,
+        range: 28, desc: 'Мгновенный телепорт к курсору.' },
+    },
   },
   {
     id: 'assassin', name: 'Stalker', role: 'Убийца', accent: 0xffd24f,
-    desc: 'Быстрый, бьёт часто, сильный рывок Surge.',
+    desc: 'Быстрый ближний бой. Прыжок-удар, веер клинков, стелс-рывок.',
     maxHp: 600, hpRegen: 2.5, maxMana: 300, manaRegen: 3.0,
-    moveSpeed: 12, attackRange: 8, attackDamage: 56, attackSpeed: 1.15, armor: 4,
-    abilityMods: { Q: 1.0, W: 0.9, E: 1.45 },
+    moveSpeed: 12, attackRange: 6, attackDamage: 56, attackSpeed: 1.2, armor: 4,
+    attackType: 'melee',
+    abilities: {
+      Q: { key: 'Q', name: 'Теневой бросок', icon: '🗡️', type: 'dash', manaCost: 60, cooldown: 7,
+        damage: 90, damagePerLevel: 45, range: 22, radius: 4.5,
+        desc: 'Рывок с бурст-уроном в точке.' },
+      W: { key: 'W', name: 'Веер клинков', icon: '🌀', type: 'aoe', manaCost: 80, cooldown: 8,
+        damage: 55, damagePerLevel: 30, radius: 9,
+        desc: 'Клинки во все стороны вокруг себя.' },
+      E: { key: 'E', name: 'Тень', icon: '👻', type: 'buff_speed', manaCost: 50, cooldown: 11,
+        speedBonus: 6, speedBonusPerLevel: 2, duration: 3.5,
+        desc: 'Резкое ускорение на 3.5с.' },
+    },
   },
 ];
 
@@ -85,44 +117,18 @@ export const BASE = {
   maxHp: 2600, armor: 10, goldBounty: 0,
 };
 
-// ---- Abilities with per-level scaling (levels 1..4) ----
-export const ABILITIES = {
-  Q: {
-    name: 'Bolt', key: 'Q', manaCost: 60, cooldown: 4,
-    damage: 90, damagePerLevel: 40, range: 38, speed: 42, type: 'projectile',
-    desc: 'Снаряд по курсору. Урон растёт с уровнем.',
-  },
-  W: {
-    name: 'Nova', key: 'W', manaCost: 90, cooldown: 9,
-    damage: 65, damagePerLevel: 35, radius: 11, radiusPerLevel: 1, type: 'aoe',
-    desc: 'Взрыв вокруг героя. Урон и радиус растут.',
-  },
-  E: {
-    name: 'Surge', key: 'E', manaCost: 50, cooldown: 12,
-    duration: 3, speedBonus: 4, speedBonusPerLevel: 1.5, type: 'buff',
-    desc: 'Рывок скорости на 3 секунды. Бонус растёт.',
-  },
-};
-
 export const MAX_ABILITY_LEVEL = 4;
 
-// Compute effective ability values at a given learned level (1..4)
-export function abilityStat(key, level) {
-  const a = ABILITIES[key];
+// Compute effective values of a hero ability object at a given learned level (1..4).
+export function scaleAbility(ab, level) {
   const L = Math.max(1, level);
-  return {
-    key,
-    name: a.name,
-    type: a.type,
-    manaCost: a.manaCost,
-    cooldown: a.cooldown,
-    damage: (a.damage || 0) + (a.damagePerLevel || 0) * (L - 1),
-    radius: (a.radius || 0) + (a.radiusPerLevel || 0) * (L - 1),
-    range: a.range,
-    speed: a.speed,
-    duration: a.duration,
-    speedBonus: (a.speedBonus || 0) + (a.speedBonusPerLevel || 0) * (L - 1),
-  };
+  const s = Object.assign({}, ab);
+  if (ab.damagePerLevel != null) s.damage = (ab.damage || 0) + ab.damagePerLevel * (L - 1);
+  if (ab.radiusPerLevel != null) s.radius = (ab.radius || 0) + ab.radiusPerLevel * (L - 1);
+  if (ab.speedBonusPerLevel != null) s.speedBonus = (ab.speedBonus || 0) + ab.speedBonusPerLevel * (L - 1);
+  if (ab.armorPerLevel != null) s.armorBonus = (ab.armorBonus || 0) + ab.armorPerLevel * (L - 1);
+  if (ab.healPerLevel != null) s.healPerSec = (ab.healPerSec || 0) + ab.healPerLevel * (L - 1);
+  return s;
 }
 
 // ---- Item shop ----

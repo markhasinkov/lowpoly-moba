@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { ABILITIES } from './config.js';
+// Abilities are defined per-hero in config; this module only renders visuals.
 
 const RAD = 0x66ccff, DIRE = 0xff7755;
 function teamColor(t) { return t === 'radiant' ? RAD : DIRE; }
@@ -71,8 +71,7 @@ export class EffectSystem {
   }
 
   // ---- Q: Bolt projectile with glowing core + trailing cone ----
-  spawnBolt(caster, dir, enemies, damage) {
-    const a = ABILITIES.Q;
+  spawnBolt(caster, dir, enemies, damage, opts = {}) {
     const col = teamColor(caster.team);
     const g = new THREE.Group();
     const core = new THREE.Mesh(
@@ -92,8 +91,8 @@ export class EffectSystem {
     g.lookAt(start.clone().add(d));
     this.scene.add(g);
     this.projectiles.push({
-      group: g, core, dir: d, speed: a.speed, traveled: 0, range: a.range,
-      damage: damage != null ? damage : a.damage,
+      group: g, core, dir: d, speed: opts.speed || 42, traveled: 0, range: opts.range || 38,
+      damage: damage != null ? damage : 90, slow: opts.slow || null,
       team: caster.team, caster, enemies, radius: 1.8, color: col,
     });
     this.spawnCastFlash(caster.pos, col);
@@ -101,8 +100,7 @@ export class EffectSystem {
 
   // ---- W: Nova shockwave + ground ring + flying shards ----
   spawnNova(caster, radius) {
-    const a = ABILITIES.W;
-    const r = radius != null ? radius : a.radius;
+    const r = radius != null ? radius : 11;
     const col = teamColor(caster.team);
 
     const wave = new THREE.Mesh(
@@ -127,7 +125,7 @@ export class EffectSystem {
       const dir = new THREE.Vector3(Math.cos(ang), 0, Math.sin(ang));
       this.effects.push(shard(this.scene, caster.pos, col, dir));
     }
-    return { radius: r, damage: a.damage };
+    return { radius: r };
   }
 
   // ---- impact burst when a bolt connects ----
@@ -176,9 +174,41 @@ export class EffectSystem {
     this.effects.push(growFade(this.scene, disc, 0.4, 1.6, 1.4, 0.5));
   }
 
+  // ---- basic ranged auto-attack: homing orb ----
+  spawnBasic(caster, target, damage, color) {
+    const g = new THREE.Group();
+    const core = new THREE.Mesh(
+      new THREE.SphereGeometry(0.38, 8, 8),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 1.3, flatShading: true })
+    );
+    g.add(core);
+    g.position.copy(caster.pos); g.position.y = 2.2;
+    this.scene.add(g);
+    this.projectiles.push({
+      group: g, core, homing: true, target,
+      speed: (caster.projectile && caster.projectile.speed) || 38,
+      traveled: 0, range: 70, damage, team: caster.team, caster, radius: 1.1, color,
+    });
+  }
+
   update(dt, allEntities, onDamage) {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
+      if (p.homing) {
+        if (!p.target || !p.target.alive) { this.scene.remove(p.group); this.projectiles.splice(i, 1); continue; }
+        const aim = p.target.pos.clone(); aim.y = 2.0;
+        const dir = aim.sub(p.group.position); const dist = dir.length(); dir.normalize();
+        p.group.position.addScaledVector(dir, Math.min(p.speed * dt, dist));
+        p.traveled += p.speed * dt;
+        p.core.rotation.y += dt * 9;
+        if (p.group.position.distanceTo(p.target.pos) <= (p.radius + (p.target.radius || 1))) {
+          onDamage(p.target, p.damage, p.caster);
+          this.spawnHit(p.target.pos, p.color);
+          this.scene.remove(p.group); this.projectiles.splice(i, 1); continue;
+        }
+        if (p.traveled >= p.range) { this.scene.remove(p.group); this.projectiles.splice(i, 1); }
+        continue;
+      }
       const step = p.speed * dt;
       p.group.position.addScaledVector(p.dir, step);
       p.traveled += step;
@@ -188,6 +218,7 @@ export class EffectSystem {
         if (!e.alive || e.team === p.team) continue;
         if (e.pos.distanceTo(p.group.position) <= (p.radius + (e.radius || 1))) {
           onDamage(e, p.damage, p.caster);
+          if (p.slow) { e.slowT = p.slow.dur; e.slowFactor = p.slow.factor; }
           hit = true; break;
         }
       }
@@ -203,4 +234,3 @@ export class EffectSystem {
   }
 }
 
-export { ABILITIES };

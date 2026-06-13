@@ -9,7 +9,7 @@ import {
 } from './ai.js';
 import { UI } from './ui.js';
 import {
-  TEAM, WORLD, CREEP, ABILITIES, abilityStat, ITEMS, AI_BUILD_ORDER,
+  TEAM, WORLD, CREEP, scaleAbility, ITEMS, AI_BUILD_ORDER,
   HERO_DEFS, getHeroDef, NEUTRAL, CAMPS,
   XP_PER_LEVEL, HERO_RESPAWN, MAX_LEVEL, MAX_ABILITY_LEVEL, MAX_ITEMS,
 } from './config.js';
@@ -71,15 +71,18 @@ const aimLine = new THREE.Line(
 aimLine.frustumCulled = false;
 scene.add(aimLine);
 function updateAim() {
-  if (!started || !player || !player.alive || gameEnded || (player.abilityLevels.Q || 0) < 1) {
+  const qAb = player && player.abilities ? player.abilities.Q : null;
+  const directional = qAb && (qAb.type === 'projectile' || qAb.type === 'dash');
+  if (!started || !player || !player.alive || gameEnded || (player.abilityLevels.Q || 0) < 1 || !directional) {
     aimLine.material.opacity = 0; return;
   }
-  const a = abilityStat('Q', player.abilityLevels.Q);
+  const a = scaleAbility(qAb, player.abilityLevels.Q);
   const dir = new THREE.Vector3().subVectors(pointerWorld, player.pos).setY(0);
   if (dir.lengthSq() < 0.01) { aimLine.material.opacity = 0; return; }
   dir.normalize();
   const from = player.pos.clone(); from.y = 2.2;
-  const to = from.clone().addScaledVector(dir, Math.min(a.range, 32));
+  const reach = a.range || 30;
+  const to = from.clone().addScaledVector(dir, Math.min(reach, 34));
   const pos = aimLine.geometry.attributes.position;
   pos.setXYZ(0, from.x, from.y, from.z); pos.setXYZ(1, to.x, to.y, to.z); pos.needsUpdate = true;
   const ready = player.cdQ <= 0 && player.mana >= a.manaCost;
@@ -187,73 +190,106 @@ function refreshHud() {
   ui.renderShop(ITEMS, player, nearOwnFountain(player));
 }
 
-// ---- Abilities ----
-function abilityMod(hero, key) { return (hero.abilityMods && hero.abilityMods[key]) || 1; }
+// ---- Abilities (unified for player & AI) ----
 function teamHex(team) { return team === 'radiant' ? 0x66ccff : 0xff7755; }
 
-function castAbility(key) {
-  const lvl = player.abilityLevels[key];
-  if (lvl < 1) { ui.showToast(`Способность не изучена — нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'} чтобы прокачать`, 1.8); return; }
-  const s = abilityStat(key, lvl);
-  const mod = abilityMod(player, key);
+function castForHero(hero, key, aimPos, isPlayer) {
+  const lvl = hero.abilityLevels[key] || 0;
+  const ab = hero.abilities[key];
+  if (lvl < 1) { if (isPlayer) ui.showToast(`Способность не изучена — нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'}`, 1.8); return false; }
+  const s = scaleAbility(ab, lvl);
   const cdKey = 'cd' + key;
-  if (player[cdKey] > 0) { ui.showToast('Способность на перезарядке', 0.9); return; }
-  if (player.mana < s.manaCost) { ui.showToast('Недостаточно маны', 1); return; }
+  if (hero[cdKey] > 0) { if (isPlayer) ui.showToast('На перезарядке', 0.8); return false; }
+  if (hero.mana < s.manaCost) { if (isPlayer) ui.showToast('Недостаточно маны', 1); return false; }
+  const col = teamHex(hero.team);
+  const dir = new THREE.Vector3().subVectors(aimPos, hero.pos).setY(0);
 
-  if (key === 'Q') {
-    const dir = new THREE.Vector3().subVectors(pointerWorld, player.pos).setY(0);
-    if (dir.lengthSq() < 0.01) return;
-    player.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-    fx.spawnBolt(player, dir, entities, s.damage * mod);
-  } else if (key === 'W') {
-    fx.spawnCastFlash(player.pos, teamHex(player.team));
-    fx.spawnNova(player, s.radius);
-    for (const e of entities) {
-      if (e.alive && e.team !== player.team && player.pos.distanceTo(e.pos) <= s.radius) {
-        applyDamage(e, s.damage * mod, player);
+  switch (ab.type) {
+    case 'projectile': {
+      if (dir.lengthSq() < 0.01) return false;
+      dir.normalize(); hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+      fx.spawnBolt(hero, dir, entities, s.damage, { speed: s.speed, range: s.range, slow: ab.slow });
+      break;
+    }
+    case 'aoe': {
+      fx.spawnCastFlash(hero.pos, col);
+      fx.spawnNova(hero, s.radius);
+      for (const e of entities) {
+        if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius)
+          applyDamage(e, s.damage, hero);
       }
+      break;
     }
-  } else if (key === 'E') {
-    fx.spawnCastFlash(player.pos, player.accent);
-    player.buffE = s.duration;
-    player.moveSpeed = player.baseMoveSpeed + s.speedBonus * mod;
-    ui.showToast('Рывок! Скорость повышена', 1);
+    case 'buff_speed': {
+      fx.spawnCastFlash(hero.pos, hero.accent);
+      hero.buffE = s.duration;
+      hero.moveSpeed = hero.baseMoveSpeed + s.speedBonus;
+      if (isPlayer) ui.showToast('Ускорение!', 1);
+      break;
+    }
+    case 'buff_guard': {
+      fx.spawnCastFlash(hero.pos, hero.accent);
+      if (hero.guardT > 0) hero.armor -= (hero.guardBonus || 0);
+      hero.guardBonus = s.armorBonus; hero.armor += s.armorBonus;
+      hero.guardHeal = s.healPerSec; hero.guardT = s.duration;
+      if (isPlayer) ui.showToast('Бастион: +броня и лечение', 1.2);
+      break;
+    }
+    case 'dash': {
+      if (dir.lengthSq() < 0.01) return false;
+      const dist = Math.min(s.range, dir.length()); dir.normalize();
+      hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+      const to = hero.pos.clone().addScaledVector(dir, dist);
+      hero.dash = { from: hero.pos.clone(), to, dur: 0.2, t: 0, damage: s.damage, radius: s.radius, ghostT: 0 };
+      hero.target = null; hero.attackTarget = null;
+      break;
+    }
+    case 'blink': {
+      if (dir.lengthSq() < 0.01) return false;
+      const dist = Math.min(s.range, dir.length()); dir.normalize();
+      fx.spawnCastFlash(hero.pos, hero.accent);
+      hero.pos.addScaledVector(dir, dist);
+      fx.spawnCastFlash(hero.pos, hero.accent);
+      hero.target = null; hero.attackTarget = null;
+      break;
+    }
   }
-  player.mana -= s.manaCost;
-  player[cdKey] = s.cooldown;
-  ui.flashAbility(key);
+  hero.mana -= s.manaCost;
+  hero[cdKey] = s.cooldown;
+  if (isPlayer) ui.flashAbility(key);
+  return true;
 }
 
-function aiCastNova(hero) {
-  const lvl = hero.abilityLevels.W; if (lvl < 1) return;
-  const s = abilityStat('W', lvl); if (hero.mana < s.manaCost) return;
-  const mod = abilityMod(hero, 'W');
-  fx.spawnCastFlash(hero.pos, teamHex(hero.team));
-  fx.spawnNova(hero, s.radius);
-  for (const e of entities) {
-    if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius) {
-      applyDamage(e, s.damage * mod, hero);
+function castAbility(key) { castForHero(player, key, pointerWorld, true); }
+
+function updateDash(hero, dt) {
+  const d = hero.dash;
+  d.t += dt;
+  const k = Math.min(1, d.t / d.dur);
+  hero.pos.lerpVectors(d.from, d.to, k);
+  d.ghostT -= dt;
+  if (d.ghostT <= 0) { fx.spawnGhost(hero.pos, hero.accent); d.ghostT = 0.04; }
+  if (k >= 1) {
+    fx.spawnCastFlash(hero.pos, hero.accent);
+    for (const e of entities) {
+      if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= d.radius)
+        applyDamage(e, d.damage, hero);
     }
+    hero.dash = null;
   }
-  hero.mana -= s.manaCost; hero.cdW = s.cooldown;
-}
-function aiCastBolt(hero, dir) {
-  const lvl = hero.abilityLevels.Q; if (lvl < 1) return;
-  const s = abilityStat('Q', lvl); if (hero.mana < s.manaCost) return;
-  const mod = abilityMod(hero, 'Q');
-  hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-  fx.spawnBolt(hero, dir, entities, s.damage * mod);
-  hero.mana -= s.manaCost; hero.cdQ = s.cooldown;
 }
 
 // ---- Combat ----
 function attack(attacker, target) {
   if (attacker.attackCd > 0 || !target.alive) return;
-  applyDamage(target, attacker.attackDamage, attacker);
   attacker.attackCd = 1 / attacker.attackSpeed;
   attacker.atkAnim = 0.25;
-  if (attacker.kind === 'hero' || attacker.kind === 'creep') {
-    fx.spawnHit(target.pos, attacker.team === 'dire' ? 0xff9966 : 0xbfe6ff);
+  if (attacker.attackType === 'ranged') {
+    fx.spawnBasic(attacker, target, attacker.attackDamage, attacker.team === 'radiant' ? 0x8fd0ff : 0xffb088);
+  } else {
+    applyDamage(target, attacker.attackDamage, attacker);
+    if (attacker.kind === 'hero' || attacker.kind === 'creep')
+      fx.spawnHit(target.pos, attacker.team === 'dire' ? 0xff9966 : 0xbfe6ff);
   }
 }
 
@@ -338,6 +374,8 @@ function respawnHero(hero) {
   hero.pos.set(base.x + (Math.random() - 0.5) * 6, 0, base.z + (Math.random() - 0.5) * 6);
   hero.mesh.position.copy(hero.pos);
   hero.target = null; hero.attackTarget = null;
+  hero.dash = null; hero.slowT = 0;
+  if (hero.guardT > 0) { hero.armor -= (hero.guardBonus || 0); hero.guardBonus = 0; hero.guardT = 0; }
   hero.setHpBar();
 }
 
@@ -376,6 +414,7 @@ function initHero(hero) {
   hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.buffE = 0;
   hero.abilityLevels = { Q: 0, W: 0, E: 0 };
   hero.skillPoints = 1; hero.items = []; hero.aiBuyIndex = 0; hero._ghostT = 0;
+  hero.dash = null; hero.guardT = 0; hero.guardBonus = 0; hero.slowT = 0;
 }
 
 function lanePoint(t) {
@@ -431,6 +470,12 @@ function updateCamera() {
 function tickCooldowns(hero, dt) {
   for (const k of ['cdQ', 'cdW', 'cdE']) hero[k] = Math.max(0, hero[k] - dt);
   if (hero.buffE > 0) { hero.buffE -= dt; if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; }
+  if (hero.slowT > 0) hero.slowT -= dt;
+  if (hero.guardT > 0) {
+    hero.guardT -= dt;
+    hero.hp = Math.min(hero.maxHp, hero.hp + (hero.guardHeal || 0) * dt);
+    if (hero.guardT <= 0) { hero.armor -= (hero.guardBonus || 0); hero.guardBonus = 0; }
+  }
 }
 
 function regen(e, dt) {
@@ -481,11 +526,13 @@ function update(dt) {
   waveTimer -= dt;
   if (waveTimer <= 0) { spawnWave(); waveTimer = CREEP.spawnInterval; }
 
-  for (const e of entities) if (e.attackCd > 0) e.attackCd -= dt;
+  for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e.slowT > 0 && e.kind !== 'hero') e.slowT -= dt; }
 
   if (player.alive) {
     tickCooldowns(player, dt); regen(player, dt); surgeTrail(player, dt);
-    if (player.attackTarget && player.attackTarget.alive) {
+    if (player.dash) {
+      updateDash(player, dt);
+    } else if (player.attackTarget && player.attackTarget.alive) {
       const d = player.distanceTo(player.attackTarget);
       if (d <= player.attackRange) {
         player.mesh.rotation.y = Math.atan2(player.attackTarget.pos.x - player.pos.x, player.attackTarget.pos.z - player.pos.z);
@@ -501,7 +548,8 @@ function update(dt) {
 
   if (enemy.alive) {
     tickCooldowns(enemy, dt); regen(enemy, dt); surgeTrail(enemy, dt); enemyAutoBuy(enemy);
-    updateEnemyHero(enemy, { entities, player }, dt, attack, aiCastNova, aiCastBolt);
+    if (enemy.dash) updateDash(enemy, dt);
+    else updateEnemyHero(enemy, { entities, player }, dt, attack, (key, aimPos) => castForHero(enemy, key, aimPos, false));
   } else {
     enemy.respawnTimer -= dt;
     if (enemy.respawnTimer <= 0) respawnHero(enemy);

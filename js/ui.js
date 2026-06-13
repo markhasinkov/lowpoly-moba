@@ -1,4 +1,4 @@
-import { ABILITIES, abilityStat, ITEMS, MAX_ABILITY_LEVEL } from './config.js';
+import { scaleAbility, ITEMS, MAX_ABILITY_LEVEL } from './config.js';
 
 export class UI {
   constructor() {
@@ -106,13 +106,17 @@ export class UI {
   }
 
   updateAbilities(hero) {
+    if (!hero.abilities) return;
     for (const k of ['Q', 'W', 'E']) {
       const el = this.abilityEls[k];
+      const ab = hero.abilities[k];
       const lvl = hero.abilityLevels ? hero.abilityLevels[k] : 0;
       const cd = hero['cd' + k] || 0;
       const cover = el.querySelector('.cd-cover');
       const label = el.querySelector('.cd-label');
-      const max = ABILITIES[k].cooldown;
+      const nameEl = el.querySelector('.name');
+      if (nameEl) nameEl.textContent = `${ab.icon} ${ab.name}`;
+      const max = ab.cooldown || 1;
       if (cd > 0) {
         cover.style.height = Math.min(100, (cd / max) * 100) + '%';
         label.textContent = cd.toFixed(1);
@@ -122,14 +126,11 @@ export class UI {
         label.textContent = '';
         el.classList.remove('on-cd');
       }
-      // pips
       const pips = el.querySelectorAll('.pip');
       pips.forEach((p, i) => p.classList.toggle('filled', i < lvl));
-      // level-up button
       const btn = el.querySelector('.levelup');
       const canLevel = hero.skillPoints > 0 && lvl < MAX_ABILITY_LEVEL;
       if (btn) btn.style.display = canLevel ? 'flex' : 'none';
-      el.classList.toggle('learnable', canLevel);
       el.classList.toggle('learnable', canLevel);
       el.classList.toggle('locked', lvl < 1);
       el.title = this.abilityTooltip(k, hero, lvl, canLevel);
@@ -137,16 +138,18 @@ export class UI {
   }
 
   abilityTooltip(key, hero, lvl, canLevel) {
-    const a = ABILITIES[key];
-    const mod = (hero.abilityMods && hero.abilityMods[key]) || 1;
-    const shown = abilityStat(key, Math.max(1, lvl));
-    const hot = key === 'Q' ? 'Q (прокачка 1)' : key === 'W' ? 'W (прокачка 2)' : 'E (прокачка 3)';
+    const ab = hero.abilities[key];
+    const shown = scaleAbility(ab, Math.max(1, lvl));
     let effect;
-    if (key === 'E') effect = `Скорость +${Math.round(shown.speedBonus * mod)} на ${shown.duration}с`;
-    else effect = `Урон ${Math.round(shown.damage * mod)}${key === 'W' ? `, радиус ${Math.round(shown.radius)}` : ''}`;
-    const head = lvl < 1 ? `${a.name} — НЕ ИЗУЧЕНА` : `${a.name} — ур.${lvl}/${MAX_ABILITY_LEVEL}`;
+    if (ab.type === 'buff_speed') effect = `Скорость +${Math.round(shown.speedBonus)} на ${ab.duration}с`;
+    else if (ab.type === 'buff_guard') effect = `+${Math.round(shown.armorBonus)} брони, лечение ${Math.round(shown.healPerSec)}/с (${ab.duration}с)`;
+    else if (ab.type === 'blink') effect = `Телепорт на ${ab.range}`;
+    else if (ab.type === 'dash') effect = `Рывок ${ab.range}, урон ${Math.round(shown.damage)} в точке`;
+    else if (ab.type === 'projectile') effect = `Урон ${Math.round(shown.damage)}${ab.slow ? ', замедляет' : ''}`;
+    else effect = `Урон ${Math.round(shown.damage)}, радиус ${Math.round(shown.radius)}`;
+    const head = lvl < 1 ? `${ab.icon} ${ab.name} — НЕ ИЗУЧЕНА` : `${ab.icon} ${ab.name} — ур.${lvl}/${MAX_ABILITY_LEVEL}`;
     const learn = canLevel ? `\n► Можно прокачать (нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'})` : '';
-    return `${head}\n${a.desc}\n${effect}\nМана: ${a.manaCost} · Кулдаун: ${a.cooldown}с\nКлавиша: ${hot}${learn}`;
+    return `${head}\n${ab.desc}\n${effect}\nМана: ${ab.manaCost} · Кулдаун: ${ab.cooldown}с${learn}`;
   }
 
   flashAbility(key) {
