@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Low-Poly MOBA — Sauna</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="game"></div>
+
+  <!-- Top bar -->
+  <div id="topbar">
+    <div class="stat"><span class="label">⏱</span><span id="match-timer">0:00</span></div>
+    <div class="stat"><span class="label">💰</span><span id="gold">0</span></div>
+    <div class="stat"><span class="label">LVL</span><span id="level">1</span></div>
+    <div class="stat"><span class="label">K/D</span><span id="kda">0 / 0</span></div>
+  </div>
+
+  <!-- Minimap -->
+  <div id="minimap-wrap">
+    <canvas id="minimap" width="190" height="190"></canvas>
+  </div>
+
+  <!-- Bottom HUD -->
+  <div id="hud">
+    <div id="bars">
+      <div class="bar hp"><div id="hp-fill" class="fill"></div><span id="hp-text" class="bar-text">0 / 0</span></div>
+      <div class="bar mana"><div id="mana-fill" class="fill"></div><span id="mana-text" class="bar-text">0 / 0</span></div>
+      <div class="bar xp"><div id="xp-fill" class="fill"></div></div>
+    </div>
+    <div id="abilities">
+      <div class="ability" id="ab-Q"><div class="key">Q</div><div class="name">Bolt</div><div class="cd-cover"></div><div class="cd-label"></div></div>
+      <div class="ability" id="ab-W"><div class="key">W</div><div class="name">Nova</div><div class="cd-cover"></div><div class="cd-label"></div></div>
+      <div class="ability" id="ab-E"><div class="key">E</div><div class="name">Surge</div><div class="cd-cover"></div><div class="cd-label"></div></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="gameover">
+    <div class="panel">
+      <h1>ПОБЕДА!</h1>
+      <button id="restart">Играть снова</button>
+    </div>
+  </div>
+
+  <div id="help">
+    <strong>Управление</strong><br/>
+    ПКМ / ЛКМ — идти / атаковать<br/>
+    Q W E — способности (по курсору)<br/>
+    S — стоп
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
