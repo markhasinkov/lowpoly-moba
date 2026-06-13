@@ -447,10 +447,12 @@ function surgeTrail(hero, dt) {
   }
 }
 
-let idleAngle = 0;
+let idleAngle = 0, sceneTime = 0;
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
+  sceneTime += dt;
+  if (scene.userData.update) scene.userData.update(sceneTime);
   if (started && !gameEnded) update(dt);
 
   for (let i = entities.length - 1; i >= 0; i--) {

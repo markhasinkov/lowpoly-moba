@@ -265,3 +265,13 @@ canvas { display: block; }
   0% { box-shadow: 0 0 0 0 rgba(127,224,168,.9); transform: scale(1.12); border-color: #fff; }
   100% { box-shadow: 0 0 0 16px rgba(127,224,168,0); transform: scale(1); }
 }
+
+
+/* Vignette + subtle warm color grade over the 3D view */
+#vignette {
+  position: fixed; inset: 0; z-index: 5; pointer-events: none;
+  background:
+    radial-gradient(ellipse at 50% 42%, rgba(0,0,0,0) 52%, rgba(0,0,0,0.18) 80%, rgba(0,0,0,0.42) 100%),
+    linear-gradient(180deg, rgba(255,220,150,0.05), rgba(40,60,90,0.06));
+  mix-blend-mode: multiply;
+}
