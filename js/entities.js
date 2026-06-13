@@ -204,13 +204,20 @@ export function createNeutral(x, z) {
 export function createCreep(team, x, z) {
   const color = COLORS[team];
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.4, 1.1), mat(color));
-  body.position.y = 1.0; body.castShadow = true; g.add(body);
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), mat(0xe0c090));
-  head.position.y = 2.0; head.castShadow = true; g.add(head);
-  g.userData.flashParts = [body, head];
+  const accentC = team === 'radiant' ? 0x2b6fbf : 0xa83232;
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.75, 1.2, 8), mat(color));
+  body.position.y = 0.95; body.castShadow = true; g.add(body);
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.58, 0.58, 0.25, 8), mat(0x3a2a18));
+  belt.position.y = 0.5; g.add(belt);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0), mat(0xe8c79a));
+  head.position.y = 1.85; head.castShadow = true; g.add(head);
+  const helm = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.6, 8), mat(accentC));
+  helm.position.y = 2.15; helm.castShadow = true; g.add(helm);
+  const club = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 1.1, 5), mat(0x6b4a2b));
+  club.position.set(0.6, 1.1, 0.2); club.rotation.z = -0.5; g.add(club);
+  g.userData.flashParts = [body, head, helm];
   const bar = makeBar(2);
-  bar.position.y = 2.9; g.add(bar);
+  bar.position.y = 2.7; g.add(bar);
 
   return new Entity({
     kind: 'creep', team, mesh: g, hpBar: bar,
@@ -226,18 +233,26 @@ export function createCreep(team, x, z) {
 export function createTower(team, x, z) {
   const color = COLORS[team];
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.8, 2, 6), mat(0x8a8a92));
-  base.position.y = 1; base.castShadow = true; g.add(base);
-  const mid = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.0, 4, 6), mat(0xa0a0a8));
-  mid.position.y = 4; mid.castShadow = true; g.add(mid);
-  const top = new THREE.Mesh(new THREE.ConeGeometry(2.0, 2.4, 6), mat(color));
-  top.position.y = 7.2; top.castShadow = true; g.add(top);
-  g.userData.flashParts = [base, mid];
-  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0),
-    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.6, flatShading: true }));
-  crystal.position.y = 8.8; g.add(crystal);
+  const stone = 0x8c93a0, stoneDark = 0x6f7682;
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.5, 1.6, 8), mat(stoneDark));
+  base.position.y = 0.8; base.receiveShadow = true; base.castShadow = true; g.add(base);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 2.5, 6.2, 8), mat(stone));
+  shaft.position.y = 4.6; shaft.castShadow = true; g.add(shaft);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.2, 0.7, 8), mat(stoneDark));
+  cap.position.y = 7.9; cap.castShadow = true; g.add(cap);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.9, 0.7), mat(stone));
+    m.position.set(Math.cos(a) * 2.2, 8.7, Math.sin(a) * 2.2); m.castShadow = true; g.add(m);
+  }
+  const top = new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.0, 8), mat(color));
+  top.position.y = 9.6; top.castShadow = true; g.add(top);
+  g.userData.flashParts = [base, shaft, cap];
+  const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.8, 0),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9, flatShading: true }));
+  crystal.position.y = 8.6; g.add(crystal); g.userData.gem = crystal;
   const bar = makeBar(4.5);
-  bar.position.y = 10.5; g.add(bar);
+  bar.position.y = 11.2; g.add(bar);
 
   return new Entity({
     kind: 'tower', team, mesh: g, hpBar: bar,
@@ -272,6 +287,30 @@ export function createBase(team, x, z) {
 
 export { TEAM };
 
+function attachWeapons(model, id, accent) {
+  const bones = {};
+  model.traverse((o) => { if (o.name === 'handslot.r') bones.r = o; else if (o.name === 'handslot.l') bones.l = o; });
+  const steel = 0xc2cad6, wood = 0x6b4a2b;
+  const wmat = (c, emis) => new THREE.MeshStandardMaterial({ color: c, emissive: emis || 0x000000, emissiveIntensity: emis ? 1.1 : 0, flatShading: true, roughness: 0.55, metalness: 0.2 });
+  const piece = (geo, c, emis) => { const m = new THREE.Mesh(geo, wmat(c, emis)); m.castShadow = true; return m; };
+  if (id === 'guardian' && bones.r) {
+    const w = new THREE.Group();
+    const handle = piece(new THREE.CylinderGeometry(0.04, 0.04, 1.0, 6), wood); handle.position.y = 0.45; w.add(handle);
+    const hammer = piece(new THREE.BoxGeometry(0.3, 0.34, 0.42), steel); hammer.position.y = 1.0; w.add(hammer);
+    bones.r.add(w);
+  } else if (id === 'mage' && bones.r) {
+    const w = new THREE.Group();
+    const shaft = piece(new THREE.CylinderGeometry(0.035, 0.045, 1.5, 6), wood); shaft.position.y = 0.7; w.add(shaft);
+    const orb = piece(new THREE.IcosahedronGeometry(0.17, 0), accent, accent); orb.position.y = 1.55; w.add(orb);
+    bones.r.add(w);
+  } else if (id === 'assassin') {
+    const dagger = () => { const w = new THREE.Group(); const bl = piece(new THREE.ConeGeometry(0.06, 0.55, 4), steel); bl.position.y = 0.3; w.add(bl); w.add(piece(new THREE.BoxGeometry(0.2, 0.06, 0.06), 0x3a2a18)); return w; };
+    if (bones.r) bones.r.add(dagger());
+    if (bones.l) bones.l.add(dagger());
+  }
+}
+
+
 // ---- glTF (KayKit) hero: detailed rigged model with skeletal animations ----
 function createGLTFHero(team, def, asset) {
   const color = COLORS[team];
@@ -300,6 +339,7 @@ function createGLTFHero(team, def, asset) {
     }
   });
   g.add(model);
+  attachWeapons(model, def.id, accent);
 
   const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 0.18, 22),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 }));

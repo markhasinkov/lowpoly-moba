@@ -205,6 +205,8 @@ function castForHero(hero, key, aimPos, isPlayer) {
   const col = teamHex(hero.team);
   const dir = new THREE.Vector3().subVectors(aimPos, hero.pos).setY(0);
 
+  fx.spawnCastCircle(hero.pos, hero.accent);
+
   switch (ab.type) {
     case 'projectile': {
       if (dir.lengthSq() < 0.01) return false;

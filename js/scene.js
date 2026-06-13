@@ -129,6 +129,23 @@ function buildArena(scene) {
     );
     disc.rotation.x = -Math.PI / 2; disc.position.set(base.x, 0.045, base.z);
     scene.add(disc);
+    // decorative tiered fountain, offset toward map centre so it doesn't clip the ancient
+    const dl = Math.hypot(base.x, base.z) || 1;
+    const fx0 = base.x - (base.x / dl) * 9, fz0 = base.z - (base.z / dl) * 9;
+    const stoneF = 0x9aa0aa, stoneFd = 0x7c828c;
+    const basin = new THREE.Mesh(new THREE.CylinderGeometry(3.4, 3.8, 0.9, 18), mat(stoneFd));
+    basin.position.set(fx0, 0.45, fz0); basin.castShadow = true; basin.receiveShadow = true; scene.add(basin);
+    const pool = new THREE.Mesh(new THREE.CylinderGeometry(3.0, 3.0, 0.35, 18),
+      new THREE.MeshStandardMaterial({ color: 0x3fa0d8, emissive: COLORS.fountain, emissiveIntensity: 0.5, transparent: true, opacity: 0.92, roughness: 0.2, metalness: 0.3 }));
+    pool.position.set(fx0, 0.95, fz0); scene.add(pool);
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 1.2, 2.2, 10), mat(stoneF));
+    pedestal.position.set(fx0, 1.9, fz0); pedestal.castShadow = true; scene.add(pedestal);
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 0.9, 0.6, 14), mat(stoneFd));
+    bowl.position.set(fx0, 3.0, fz0); bowl.castShadow = true; scene.add(bowl);
+    const topWater = new THREE.Mesh(new THREE.IcosahedronGeometry(0.6, 0),
+      new THREE.MeshStandardMaterial({ color: 0x7fd6ff, emissive: COLORS.fountain, emissiveIntensity: 1.1, flatShading: true }));
+    topWater.position.set(fx0, 3.7, fz0); scene.add(topWater);
+    animated.push({ kind: 'fountain', mesh: topWater, pool, base: 3.7 });
   }
 
   // ---- River: flat-shaded water with animated CPU ripples ----
@@ -207,6 +224,10 @@ function buildArena(scene) {
           arr[j + 2] = a.base[j + 2] + Math.cos(t * 0.4 + i * 0.6) * 1.6;
         }
         a.geo.attributes.position.needsUpdate = true;
+      } else if (a.kind === 'fountain') {
+        a.mesh.position.y = a.base + Math.sin(t * 2.2) * 0.18;
+        a.mesh.rotation.y += 0.03;
+        if (a.pool && a.pool.material) a.pool.material.emissiveIntensity = 0.4 + Math.sin(t * 3) * 0.15;
       }
     }
   };

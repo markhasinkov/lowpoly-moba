@@ -191,6 +191,33 @@ export class EffectSystem {
     });
   }
 
+  // ---- runic cast windup: two counter-rotating glyph rings + rising sparks ----
+  spawnCastCircle(pos, color) {
+    const mkRing = (rIn, rOut, seg, op) => {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(rIn, rOut, seg, 1),
+        new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide, transparent: true, opacity: op })
+      );
+      m.rotation.x = -Math.PI / 2; m.position.copy(pos); m.position.y = 0.18;
+      this.scene.add(m); return m;
+    };
+    const outer = mkRing(2.2, 2.7, 6, 0.9);   // hexagonal glyph
+    const inner = mkRing(1.1, 1.5, 3, 0.85);  // triangular glyph
+    const dur = 0.6, scene = this.scene;
+    this.effects.push({
+      life: 0,
+      tick(dt) {
+        this.life += dt; const k = this.life / dur;
+        outer.rotation.z += dt * 2.5; inner.rotation.z -= dt * 4;
+        const s = 0.5 + k * 0.9; outer.scale.set(s, s, s); inner.scale.set(s, s, s);
+        outer.material.opacity = 0.9 * (1 - k); inner.material.opacity = 0.85 * (1 - k);
+        return this.life >= dur;
+      },
+      dispose() { scene.remove(outer); scene.remove(inner); },
+    });
+    for (let i = 0; i < 6; i++) this.effects.push(spark(this.scene, pos, color, 5));
+  }
+
   update(dt, allEntities, onDamage) {
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
