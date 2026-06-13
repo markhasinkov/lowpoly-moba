@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { COLORS, WORLD } from './config.js';
+import { natureAssets } from './assets.js';
 
 export function createScene() {
   const scene = new THREE.Scene();
@@ -159,29 +160,7 @@ function buildArena(scene) {
   scene.add(river);
   animated.push({ kind: 'water', geo: riverGeo, base: riverBase });
 
-  // ---- Decorative scatter ----
-  const onLane = (x, z) => {
-    const ax = WORLD.radiantBase.x, az = WORLD.radiantBase.z;
-    const bx = WORLD.direBase.x, bz = WORLD.direBase.z;
-    const dx = bx - ax, dz = bz - az;
-    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
-    const px = ax + t * dx, pz = az + t * dz;
-    return Math.hypot(x - px, z - pz) < 11;
-  };
-  const nearBase = (x, z) => Math.hypot(x - WORLD.radiantBase.x, z - WORLD.radiantBase.z) < WORLD.fountainRadius + 4
-    || Math.hypot(x - WORLD.direBase.x, z - WORLD.direBase.z) < WORLD.fountainRadius + 4;
-
   const rng = mulberry32(20260613);
-  for (let i = 0; i < 220; i++) {
-    const x = (rng() - 0.5) * s * 1.35;
-    const z = (rng() - 0.5) * s * 1.35;
-    if (onLane(x, z) || nearBase(x, z)) continue;
-    const r = rng();
-    if (r > 0.55) addTree(scene, x, z, 0.7 + rng() * 1.0, rng);
-    else if (r > 0.34) addRock(scene, x, z, 0.5 + rng() * 1.1, rng);
-    else if (r > 0.16) addBush(scene, x, z, 0.7 + rng() * 0.7, rng);
-    else addFlower(scene, x, z, rng);
-  }
 
   // ---- Fireflies / floating motes for atmosphere ----
   const N = 90;
@@ -297,4 +276,53 @@ function mulberry32(a) {
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+}
+
+// ---- glTF nature scatter (runs after preloadNature) ----
+function pick(arr, rng) { return arr[(rng() * arr.length) | 0]; }
+
+function placeModel(scene, proto, x, z, scale, rng) {
+  const g = new THREE.Group();
+  g.add(proto.clone(true));
+  g.position.set(x, 0, z);
+  g.scale.setScalar(scale);
+  g.rotation.y = rng() * Math.PI * 2;
+  scene.add(g);
+}
+
+export function populateScatter(scene) {
+  const s = WORLD.size;
+  const onLane = (x, z) => {
+    const ax = WORLD.radiantBase.x, az = WORLD.radiantBase.z;
+    const bx = WORLD.direBase.x, bz = WORLD.direBase.z;
+    const dx = bx - ax, dz = bz - az;
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz)));
+    const px = ax + t * dx, pz = az + t * dz;
+    return Math.hypot(x - px, z - pz) < 11;
+  };
+  const nearBase = (x, z) => Math.hypot(x - WORLD.radiantBase.x, z - WORLD.radiantBase.z) < WORLD.fountainRadius + 4
+    || Math.hypot(x - WORLD.direBase.x, z - WORLD.direBase.z) < WORLD.fountainRadius + 4;
+
+  const N = natureAssets;
+  const hasModels = N.trees.length > 0;
+  const rng = mulberry32(20260613);
+  for (let i = 0; i < 240; i++) {
+    const x = (rng() - 0.5) * s * 1.35;
+    const z = (rng() - 0.5) * s * 1.35;
+    if (onLane(x, z) || nearBase(x, z)) continue;
+    const r = rng();
+    if (!hasModels) {
+      if (r > 0.55) addTree(scene, x, z, 0.7 + rng() * 1.0, rng);
+      else if (r > 0.34) addRock(scene, x, z, 0.5 + rng() * 1.1, rng);
+      else if (r > 0.16) addBush(scene, x, z, 0.7 + rng() * 0.7, rng);
+      else addFlower(scene, x, z, rng);
+      continue;
+    }
+    if (r > 0.5) placeModel(scene, pick(N.trees, rng), x, z, 4.2 + rng() * 3.2, rng);
+    else if (r > 0.34) placeModel(scene, pick(N.rocks, rng), x, z, 2.5 + rng() * 2.8, rng);
+    else if (r > 0.18) placeModel(scene, pick(N.bushes, rng), x, z, 3.0 + rng() * 2.2, rng);
+    else if (r > 0.10) placeModel(scene, pick(N.grass, rng), x, z, 4.0 + rng() * 2.5, rng);
+    else if (r > 0.04) placeModel(scene, pick(N.mushrooms, rng), x, z, 4.0 + rng() * 2.5, rng);
+    else addFlower(scene, x, z, rng);
+  }
 }

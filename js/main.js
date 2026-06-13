@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createScene } from './scene.js';
+import { createScene, populateScatter } from './scene.js';
 import {
   createHero, createCreep, createTower, createBase, createNeutral, animateEntityVisual, playHeroAnim,
 } from './entities.js';
@@ -8,7 +8,7 @@ import {
   updateCreep, updateTower, updateEnemyHero, updateNeutral, moveToward, nearestEnemy,
 } from './ai.js';
 import { UI } from './ui.js';
-import { preloadHeroes, heroAssets } from './assets.js';
+import { preloadHeroes, preloadNature, heroAssets } from './assets.js';
 import {
   TEAM, WORLD, CREEP, scaleAbility, ITEMS, AI_BUILD_ORDER,
   HERO_DEFS, getHeroDef, NEUTRAL, CAMPS,
@@ -625,6 +625,14 @@ animate();
   } catch (e) {
     console.error('Не удалось загрузить модели, использую запасные примитивы', e);
   }
+  try {
+    await preloadNature((done, total) => {
+      if (loadingText) loadingText.textContent = `Загрузка окружения… ${done}/${total}`;
+    });
+  } catch (e) {
+    console.error('Не удалось загрузить модели природы, использую запасные примитивы', e);
+  }
+  populateScatter(scene);
   const ld = document.getElementById('loading');
   if (ld) ld.style.display = 'none';
   ui.showHeroSelect(HERO_DEFS, (id) => startGame(id));
