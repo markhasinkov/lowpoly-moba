@@ -324,7 +324,7 @@ function createGLTFHero(team, def, asset) {
   model.scale.setScalar(s);
   box = new THREE.Box3().setFromObject(model);
   model.position.y = -box.min.y;
-  model.rotation.y = Math.PI; // face +Z to match movement facing
+  model.rotation.y = 0; // KayKit models face +Z natively, matches atan2(dir.x,dir.z) facing
 
   const teamTint = new THREE.Color(team === 'radiant' ? 0xbcd2ff : 0xffc2c2);
   const flashMeshes = [];
