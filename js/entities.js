@@ -184,6 +184,7 @@ export function createHero(team, def, asset) {
 }
 
 export function createNeutral(x, z) {
+  if (creepAssets.warrior) return createGLTFNeutral(x, z, creepAssets.warrior);
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.DodecahedronGeometry(1.0, 0), mat(0x9c7a3c));
   body.position.y = 1.1; body.castShadow = true; g.add(body);
@@ -202,6 +203,50 @@ export function createNeutral(x, z) {
     goldBounty: NEUTRAL.goldBounty, xpBounty: NEUTRAL.xpBounty,
     radius: 1.0, x, z,
   });
+}
+
+function createGLTFNeutral(x, z, asset) {
+  const g = new THREE.Group();
+  const model = cloneSkinned(asset.scene);
+  let box = new THREE.Box3().setFromObject(model);
+  const h = (box.max.y - box.min.y) || 1;
+  model.scale.setScalar(5.2 / h);
+  box = new THREE.Box3().setFromObject(model);
+  model.position.y = -box.min.y;
+  const tint = new THREE.Color(0xc8b890);
+  const flashMeshes = [];
+  model.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true; o.frustumCulled = false;
+      if (o.material) {
+        o.material = o.material.clone();
+        if (o.material.color) o.material.color.multiply(tint);
+        flashMeshes.push(o);
+      }
+    }
+  });
+  g.add(model);
+  const bar = makeBar(2.6); bar.position.y = 6.0; g.add(bar);
+
+  const mixer = new THREE.AnimationMixer(model);
+  const byName = {}; asset.animations.forEach((a) => { byName[a.name] = a; });
+  const map = { idle: 'Idle', run: 'Running_A', death: 'Death_A', hit: 'Hit_A', attack: '2H_Melee_Attack_Chop' };
+  const actions = {};
+  for (const [k, name] of Object.entries(map)) { if (byName[name]) actions[k] = mixer.clipAction(byName[name]); }
+  if (actions.idle) actions.idle.play();
+
+  const ent = new Entity({
+    kind: 'neutral', team: 'neutral', mesh: g, hpBar: bar,
+    hp: NEUTRAL.maxHp, maxHp: NEUTRAL.maxHp,
+    moveSpeed: 0, baseMoveSpeed: 0,
+    attackRange: NEUTRAL.attackRange, attackDamage: NEUTRAL.attackDamage,
+    attackSpeed: NEUTRAL.attackSpeed, armor: NEUTRAL.armor,
+    goldBounty: NEUTRAL.goldBounty, xpBounty: NEUTRAL.xpBounty,
+    radius: 1.0, x, z,
+  });
+  ent.isGLTF = true; ent.mixer = mixer; ent.actions = actions; ent.currentKey = 'idle';
+  ent.flashMeshes = flashMeshes; ent.oneShotT = 0; ent._deathStarted = false;
+  return ent;
 }
 
 export function createCreep(team, x, z) {

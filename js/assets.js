@@ -8,13 +8,13 @@ const CHAR_FILE = {
 };
 
 export const heroAssets = {}; // id -> { scene, animations }
-export const creepAssets = {}; // 'minion' -> { scene, animations }
+export const creepAssets = {}; // 'minion' / 'warrior' -> { scene, animations }
 
 const loader = new GLTFLoader();
 
 export async function preloadHeroes(onProgress) {
   const ids = Object.keys(CHAR_FILE);
-  const total = ids.length + 1;
+  const total = ids.length + 2;
   let done = 0;
   for (const id of ids) {
     const gltf = await loader.loadAsync(`assets/characters/${CHAR_FILE[id]}.glb`);
@@ -22,14 +22,16 @@ export async function preloadHeroes(onProgress) {
     done++;
     if (onProgress) onProgress(done, total);
   }
-  try {
-    const m = await loader.loadAsync('assets/characters/Skeleton_Minion.glb');
-    creepAssets.minion = { scene: m.scene, animations: m.animations };
-  } catch (e) {
-    console.warn('Не удалось загрузить модель крипа', e);
+  for (const [key, file] of [['minion', 'Skeleton_Minion'], ['warrior', 'Skeleton_Warrior']]) {
+    try {
+      const m = await loader.loadAsync(`assets/characters/${file}.glb`);
+      creepAssets[key] = { scene: m.scene, animations: m.animations };
+    } catch (e) {
+      console.warn('Не удалось загрузить модель', file, e);
+    }
+    done++;
+    if (onProgress) onProgress(done, total);
   }
-  done++;
-  if (onProgress) onProgress(done, total);
   return heroAssets;
 }
 

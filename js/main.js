@@ -301,6 +301,10 @@ function attack(attacker, target) {
 function applyDamage(target, amount, attacker) {
   const wasAlive = target.alive;
   target.takeDamage(amount, attacker);
+  if (target.isGLTF && target.alive && target.actions && target.actions.hit && target.oneShotT <= 0 && (target._hitCd || 0) <= 0) {
+    playHeroAnim(target, 'hit', 0.4);
+    target._hitCd = 0.9;
+  }
   const kind = target === player ? 'taken' : (attacker === player ? 'player' : 'normal');
   spawnDamageNumber(target.pos, amount, kind);
   if (wasAlive && !target.alive) onKill(target, attacker);
@@ -553,7 +557,7 @@ function update(dt) {
   waveTimer -= dt;
   if (waveTimer <= 0) { spawnWave(); waveTimer = CREEP.spawnInterval; }
 
-  for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e.slowT > 0 && e.kind !== 'hero') e.slowT -= dt; }
+  for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e._hitCd > 0) e._hitCd -= dt; if (e.slowT > 0 && e.kind !== 'hero') e.slowT -= dt; }
   if (player.alive) player.gold += GOLD_PER_SEC * dt;
   if (enemy.alive) enemy.gold += GOLD_PER_SEC * dt;
 
