@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import {
-  createHero, createCreep, createTower, createBase, createNeutral,
+  createHero, createCreep, createTower, createBase, createNeutral, animateEntityVisual,
 } from './entities.js';
 import { EffectSystem } from './abilities.js';
 import {
@@ -29,9 +29,63 @@ const camOffset = new THREE.Vector3(0, 46, 38);
 
 function add(e) { scene.add(e.mesh); entities.push(e); return e; }
 
-// Idle menu camera (slow orbit over the arena while choosing a hero)
 camera.position.set(0, 95, 70);
 camera.lookAt(0, 0, 0);
+
+// ---- Floating damage numbers (DOM overlay projected from world space) ----
+const fxLayer = document.getElementById('fx-layer');
+const floaters = [];
+function spawnDamageNumber(worldPos, amount, kind) {
+  if (!fxLayer) return;
+  const el = document.createElement('div');
+  el.className = 'dmg ' + (kind || '');
+  el.textContent = Math.round(amount);
+  fxLayer.appendChild(el);
+  floaters.push({
+    el, pos: worldPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 3.2, 0)),
+    vy: 2.0, t: 0, dur: 0.95,
+  });
+}
+function updateFloaters() {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.t += 0.016; f.pos.y += f.vy * 0.016;
+    const v = f.pos.clone().project(camera);
+    if (v.z > 1) { f.el.style.display = 'none'; }
+    else {
+      const x = (v.x * 0.5 + 0.5) * window.innerWidth;
+      const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
+      f.el.style.display = 'block';
+      f.el.style.transform = `translate(-50%,-50%) translate(${x}px,${y}px) scale(${1 + (1 - f.t / f.dur) * 0.4})`;
+      f.el.style.opacity = String(Math.max(0, 1 - f.t / f.dur));
+    }
+    if (f.t >= f.dur) { f.el.remove(); floaters.splice(i, 1); }
+  }
+}
+
+// ---- Aim line for Q ----
+const aimLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color: 0x8fe0ff, transparent: true, opacity: 0 })
+);
+aimLine.frustumCulled = false;
+scene.add(aimLine);
+function updateAim() {
+  if (!started || !player || !player.alive || gameEnded || (player.abilityLevels.Q || 0) < 1) {
+    aimLine.material.opacity = 0; return;
+  }
+  const a = abilityStat('Q', player.abilityLevels.Q);
+  const dir = new THREE.Vector3().subVectors(pointerWorld, player.pos).setY(0);
+  if (dir.lengthSq() < 0.01) { aimLine.material.opacity = 0; return; }
+  dir.normalize();
+  const from = player.pos.clone(); from.y = 2.2;
+  const to = from.clone().addScaledVector(dir, Math.min(a.range, 32));
+  const pos = aimLine.geometry.attributes.position;
+  pos.setXYZ(0, from.x, from.y, from.z); pos.setXYZ(1, to.x, to.y, to.z); pos.needsUpdate = true;
+  const ready = player.cdQ <= 0 && player.mana >= a.manaCost;
+  aimLine.material.opacity = ready ? 0.6 : 0.18;
+  aimLine.material.color.setHex(ready ? 0x8fe0ff : 0x5e7a88);
+}
 
 // ---- Input ----
 const raycaster = new THREE.Raycaster();
@@ -88,11 +142,11 @@ function nearestEnemyAtPoint(point, radius) {
 
 // ---- Progression ----
 function levelAbility(hero, key) {
-  if (hero.skillPoints <= 0) { if (hero === player) ui.showToast('Нет очков умений', 1); return; }
-  if (hero.abilityLevels[key] >= MAX_ABILITY_LEVEL) { if (hero === player) ui.showToast('Способность максимальна', 1); return; }
+  if (hero.skillPoints <= 0) { if (hero === player) ui.showToast('Нет очков умений — получи уровень', 1.3); return; }
+  if (hero.abilityLevels[key] >= MAX_ABILITY_LEVEL) { if (hero === player) ui.showToast('Способность уже максимальна', 1.2); return; }
   hero.abilityLevels[key]++;
   hero.skillPoints--;
-  if (hero === player) { ui.showToast(`${ABILITIES[key].name} → ур.${hero.abilityLevels[key]}`, 1.2); refreshHud(); }
+  if (hero === player) { ui.showToast(`${ABILITIES[key].name} прокачан до ур.${hero.abilityLevels[key]}`, 1.3); refreshHud(); }
 }
 
 function applyItemStats(hero, stats, sign = 1) {
@@ -102,8 +156,7 @@ function applyItemStats(hero, stats, sign = 1) {
     else if (k === 'maxMana') { hero.maxMana += delta; hero.mana += delta; }
     else if (k === 'moveSpeed') {
       hero.baseMoveSpeed += delta;
-      if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed;
-      else hero.moveSpeed += delta;
+      if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; else hero.moveSpeed += delta;
     } else { hero[k] = (hero[k] || 0) + delta; }
   }
 }
@@ -117,8 +170,7 @@ function buyItem(hero, item) {
   if (hero.items.length >= MAX_ITEMS) { if (hero === player) ui.showToast('Инвентарь полон', 1.2); return false; }
   if (hero.gold < item.cost) { if (hero === player) ui.showToast('Недостаточно золота', 1.2); return false; }
   if (hero === player && !nearOwnFountain(hero)) { ui.showToast('Покупать можно только у своей базы (фонтан)', 1.6); return false; }
-  hero.gold -= item.cost;
-  hero.items.push(item.id);
+  hero.gold -= item.cost; hero.items.push(item.id);
   applyItemStats(hero, item.stats, 1);
   if (hero === player) { ui.showToast(`Куплено: ${item.name}`, 1.2); refreshHud(); }
   return true;
@@ -131,22 +183,21 @@ ui.callbacks = {
 
 function refreshHud() {
   if (!player) return;
-  ui.updateHero(player);
-  ui.updateAbilities(player);
-  ui.updateInventory(player);
+  ui.updateHero(player); ui.updateAbilities(player); ui.updateInventory(player);
   ui.renderShop(ITEMS, player, nearOwnFountain(player));
 }
 
 // ---- Abilities ----
 function abilityMod(hero, key) { return (hero.abilityMods && hero.abilityMods[key]) || 1; }
+function teamHex(team) { return team === 'radiant' ? 0x66ccff : 0xff7755; }
 
 function castAbility(key) {
   const lvl = player.abilityLevels[key];
-  if (lvl < 1) { ui.showToast('Сначала изучи способность (1/2/3 или Shift)', 1.4); return; }
+  if (lvl < 1) { ui.showToast(`Способность не изучена — нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'} чтобы прокачать`, 1.8); return; }
   const s = abilityStat(key, lvl);
   const mod = abilityMod(player, key);
   const cdKey = 'cd' + key;
-  if (player[cdKey] > 0) return;
+  if (player[cdKey] > 0) { ui.showToast('Способность на перезарядке', 0.9); return; }
   if (player.mana < s.manaCost) { ui.showToast('Недостаточно маны', 1); return; }
 
   if (key === 'Q') {
@@ -155,6 +206,7 @@ function castAbility(key) {
     player.mesh.rotation.y = Math.atan2(dir.x, dir.z);
     fx.spawnBolt(player, dir, entities, s.damage * mod);
   } else if (key === 'W') {
+    fx.spawnCastFlash(player.pos, teamHex(player.team));
     fx.spawnNova(player, s.radius);
     for (const e of entities) {
       if (e.alive && e.team !== player.team && player.pos.distanceTo(e.pos) <= s.radius) {
@@ -162,18 +214,21 @@ function castAbility(key) {
       }
     }
   } else if (key === 'E') {
+    fx.spawnCastFlash(player.pos, player.accent);
     player.buffE = s.duration;
     player.moveSpeed = player.baseMoveSpeed + s.speedBonus * mod;
-    ui.showToast('Рывок!', 1);
+    ui.showToast('Рывок! Скорость повышена', 1);
   }
   player.mana -= s.manaCost;
   player[cdKey] = s.cooldown;
+  ui.flashAbility(key);
 }
 
 function aiCastNova(hero) {
   const lvl = hero.abilityLevels.W; if (lvl < 1) return;
   const s = abilityStat('W', lvl); if (hero.mana < s.manaCost) return;
   const mod = abilityMod(hero, 'W');
+  fx.spawnCastFlash(hero.pos, teamHex(hero.team));
   fx.spawnNova(hero, s.radius);
   for (const e of entities) {
     if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius) {
@@ -196,12 +251,17 @@ function attack(attacker, target) {
   if (attacker.attackCd > 0 || !target.alive) return;
   applyDamage(target, attacker.attackDamage, attacker);
   attacker.attackCd = 1 / attacker.attackSpeed;
-  attacker.mesh.scale.y = 1.08;
+  attacker.atkAnim = 0.25;
+  if (attacker.kind === 'hero' || attacker.kind === 'creep') {
+    fx.spawnHit(target.pos, attacker.team === 'dire' ? 0xff9966 : 0xbfe6ff);
+  }
 }
 
 function applyDamage(target, amount, attacker) {
   const wasAlive = target.alive;
   target.takeDamage(amount, attacker);
+  const kind = target === player ? 'taken' : (attacker === player ? 'player' : 'normal');
+  spawnDamageNumber(target.pos, amount, kind);
   if (wasAlive && !target.alive) onKill(target, attacker);
 }
 
@@ -210,10 +270,8 @@ function grantXp(hero, amount) {
   const newLevel = Math.min(MAX_LEVEL, 1 + Math.floor(hero.xp / XP_PER_LEVEL));
   while (hero.level < newLevel) {
     hero.level++;
-    hero.maxHp += 55; hero.hp += 55;
-    hero.maxMana += 20; hero.mana += 20;
-    hero.attackDamage += 6;
-    hero.skillPoints++;
+    hero.maxHp += 55; hero.hp += 55; hero.maxMana += 20; hero.mana += 20;
+    hero.attackDamage += 6; hero.skillPoints++;
     if (hero === player) ui.showToast(`Уровень ${hero.level}! +1 очко умений`, 1.6);
     else spendEnemySkillPoints(hero);
   }
@@ -243,7 +301,6 @@ function enemyAutoBuy(hero) {
 }
 
 function onKill(victim, killer) {
-  victim.mesh.visible = false;
   if (victim.kind === 'creep' || victim.kind === 'tower' || victim.kind === 'neutral') {
     if (killer && killer.kind === 'hero') {
       killer.gold += victim.goldBounty || 0;
@@ -252,7 +309,7 @@ function onKill(victim, killer) {
       if (killer === player && victim.kind === 'neutral') ui.showToast(`+${victim.goldBounty} золота (лес)`, 0.9);
       if (victim.kind === 'tower') ui.showToast(killer === player ? 'Башня уничтожена! +300' : 'Наша башня пала', 1.8);
     }
-    removeEntity(victim);
+    victim.dying = true; victim.deathT = 0;
   } else if (victim.kind === 'hero') {
     if (killer && killer.kind === 'hero') {
       killer.kills++; killer.gold += 250; grantXp(killer, 180);
@@ -260,7 +317,9 @@ function onKill(victim, killer) {
     }
     victim.deaths++;
     victim.respawnTimer = HERO_RESPAWN + victim.level * 1.5;
+    victim.dying = true; victim.deathT = 0;
   } else if (victim.kind === 'base') {
+    victim.dying = true; victim.deathT = 0;
     endGame(victim.team !== player.team);
   }
 }
@@ -273,7 +332,8 @@ function removeEntity(e) {
 
 function respawnHero(hero) {
   hero.hp = hero.maxHp; hero.mana = hero.maxMana; hero.alive = true;
-  hero.mesh.visible = true;
+  hero.dying = false; hero.deathT = 0;
+  hero.mesh.visible = true; hero.mesh.scale.setScalar(1); hero.mesh.rotation.z = 0;
   const base = hero.team === 'radiant' ? WORLD.radiantBase : WORLD.direBase;
   hero.pos.set(base.x + (Math.random() - 0.5) * 6, 0, base.z + (Math.random() - 0.5) * 6);
   hero.mesh.position.copy(hero.pos);
@@ -300,7 +360,6 @@ function spawnCamp(camp) {
   }
   camp.respawnTimer = 0;
 }
-
 function updateCamps(dt) {
   for (const camp of camps) {
     const cleared = camp.members.length > 0 && camp.members.every(m => !m.alive);
@@ -312,13 +371,11 @@ function updateCamps(dt) {
   }
 }
 
-// ---- Game lifecycle ----
+// ---- Lifecycle ----
 function initHero(hero) {
   hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.buffE = 0;
   hero.abilityLevels = { Q: 0, W: 0, E: 0 };
-  hero.skillPoints = 1;
-  hero.items = [];
-  hero.aiBuyIndex = 0;
+  hero.skillPoints = 1; hero.items = []; hero.aiBuyIndex = 0; hero._ghostT = 0;
 }
 
 function lanePoint(t) {
@@ -359,7 +416,7 @@ function startGame(playerDefId) {
   ui.hideHeroSelect();
   ui.renderShop(ITEMS, player, nearOwnFountain(player));
   refreshHud();
-  ui.showToast(`Ты — ${playerDef.name} (${playerDef.role}). Враг: ${enemyDef.name}. Уничтожь вражеский трон!`, 5);
+  ui.showToast(`Ты — ${playerDef.name} (${playerDef.role}). Прокачай способность (1/2/3) и в бой!`, 5);
 
   clock.getDelta();
   started = true;
@@ -383,17 +440,30 @@ function regen(e, dt) {
   if (mpReg) e.mana = Math.min(e.maxMana, e.mana + mpReg * dt);
 }
 
+function surgeTrail(hero, dt) {
+  if (hero.buffE > 0) {
+    hero._ghostT -= dt;
+    if (hero._ghostT <= 0) { fx.spawnGhost(hero.pos, hero.accent); hero._ghostT = 0.07; }
+  }
+}
+
 let idleAngle = 0;
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
   if (started && !gameEnded) update(dt);
-  for (const e of entities) {
-    if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
-    if (e.mesh.scale.y > 1) e.mesh.scale.y = Math.max(1, e.mesh.scale.y - dt * 0.6);
-    if (e.mesh.userData.gem) e.mesh.userData.gem.rotation.y += dt * 2;
+
+  for (let i = entities.length - 1; i >= 0; i--) {
+    const e = entities[i];
+    animateEntityVisual(e, dt, camera);
+    if (e.dying && e.deathT >= 0.5) {
+      if (e.kind === 'hero') { e.mesh.visible = false; }
+      else { removeEntity(e); }
+    }
   }
-  if (started) updateCamera();
+
+  updateFloaters();
+  if (started) { updateAim(); updateCamera(); }
   else {
     idleAngle += dt * 0.15;
     camera.position.set(Math.sin(idleAngle) * 80, 90, Math.cos(idleAngle) * 80);
@@ -412,7 +482,7 @@ function update(dt) {
   for (const e of entities) if (e.attackCd > 0) e.attackCd -= dt;
 
   if (player.alive) {
-    tickCooldowns(player, dt); regen(player, dt);
+    tickCooldowns(player, dt); regen(player, dt); surgeTrail(player, dt);
     if (player.attackTarget && player.attackTarget.alive) {
       const d = player.distanceTo(player.attackTarget);
       if (d <= player.attackRange) {
@@ -422,16 +492,14 @@ function update(dt) {
     } else if (player.target) {
       if (moveToward(player, player.target, dt, 0.6)) player.target = null;
     }
-    player.mesh.position.copy(player.pos);
   } else {
     player.respawnTimer -= dt;
     if (player.respawnTimer <= 0) respawnHero(player);
   }
 
   if (enemy.alive) {
-    tickCooldowns(enemy, dt); regen(enemy, dt); enemyAutoBuy(enemy);
+    tickCooldowns(enemy, dt); regen(enemy, dt); surgeTrail(enemy, dt); enemyAutoBuy(enemy);
     updateEnemyHero(enemy, { entities, player }, dt, attack, aiCastNova, aiCastBolt);
-    enemy.mesh.position.copy(enemy.pos);
   } else {
     enemy.respawnTimer -= dt;
     if (enemy.respawnTimer <= 0) respawnHero(enemy);
@@ -439,8 +507,8 @@ function update(dt) {
 
   for (const e of entities) {
     if (!e.alive) continue;
-    if (e.kind === 'creep') { updateCreep(e, entities, dt, attack); e.mesh.position.copy(e.pos); }
-    else if (e.kind === 'tower') { updateTower(e, entities, dt, attack); }
+    if (e.kind === 'creep') updateCreep(e, entities, dt, attack);
+    else if (e.kind === 'tower') updateTower(e, entities, dt, attack);
   }
 
   updateCamps(dt);

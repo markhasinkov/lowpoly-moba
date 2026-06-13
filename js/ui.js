@@ -130,8 +130,32 @@ export class UI {
       const canLevel = hero.skillPoints > 0 && lvl < MAX_ABILITY_LEVEL;
       if (btn) btn.style.display = canLevel ? 'flex' : 'none';
       el.classList.toggle('learnable', canLevel);
+      el.classList.toggle('learnable', canLevel);
       el.classList.toggle('locked', lvl < 1);
+      el.title = this.abilityTooltip(k, hero, lvl, canLevel);
     }
+  }
+
+  abilityTooltip(key, hero, lvl, canLevel) {
+    const a = ABILITIES[key];
+    const mod = (hero.abilityMods && hero.abilityMods[key]) || 1;
+    const shown = abilityStat(key, Math.max(1, lvl));
+    const hot = key === 'Q' ? 'Q (прокачка 1)' : key === 'W' ? 'W (прокачка 2)' : 'E (прокачка 3)';
+    let effect;
+    if (key === 'E') effect = `Скорость +${Math.round(shown.speedBonus * mod)} на ${shown.duration}с`;
+    else effect = `Урон ${Math.round(shown.damage * mod)}${key === 'W' ? `, радиус ${Math.round(shown.radius)}` : ''}`;
+    const head = lvl < 1 ? `${a.name} — НЕ ИЗУЧЕНА` : `${a.name} — ур.${lvl}/${MAX_ABILITY_LEVEL}`;
+    const learn = canLevel ? `\n► Можно прокачать (нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'})` : '';
+    return `${head}\n${a.desc}\n${effect}\nМана: ${a.manaCost} · Кулдаун: ${a.cooldown}с\nКлавиша: ${hot}${learn}`;
+  }
+
+  flashAbility(key) {
+    const el = this.abilityEls[key];
+    if (!el) return;
+    el.classList.remove('cast');
+    void el.offsetWidth;
+    el.classList.add('cast');
+    setTimeout(() => el.classList.remove('cast'), 360);
   }
 
   updateInventory(hero) {

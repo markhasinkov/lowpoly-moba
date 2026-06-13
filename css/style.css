@@ -245,3 +245,23 @@ canvas { display: block; }
   background: linear-gradient(90deg, #4fd089, #7fe0a8);
 }
 .hero-card:hover .hc-pick { filter: brightness(1.08); }
+
+/* Floating damage numbers */
+#fx-layer {
+  position: fixed; inset: 0; z-index: 18; pointer-events: none; overflow: hidden;
+}
+#fx-layer .dmg {
+  position: absolute; top: 0; left: 0; will-change: transform, opacity;
+  font-weight: 900; font-size: 20px; color: #fff;
+  text-shadow: 0 2px 4px #000, 0 0 6px rgba(0,0,0,.6);
+}
+#fx-layer .dmg.player { color: #ffe14d; font-size: 22px; }
+#fx-layer .dmg.taken { color: #ff5b5b; font-size: 24px; }
+#fx-layer .dmg.normal { color: #eafaf0; }
+
+/* Ability cast pulse */
+.ability.cast { animation: castPulse .36s ease-out; }
+@keyframes castPulse {
+  0% { box-shadow: 0 0 0 0 rgba(127,224,168,.9); transform: scale(1.12); border-color: #fff; }
+  100% { box-shadow: 0 0 0 16px rgba(127,224,168,0); transform: scale(1); }
+}

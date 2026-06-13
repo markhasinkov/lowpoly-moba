@@ -33,7 +33,11 @@ export class Entity {
     this.target = null;       // movement target (Vector3) or null
     this.attackTarget = null; // entity to attack
     this.mesh.position.copy(this.pos);
+    this.flashT = 0; this.atkAnim = 0; this.walkPhase = Math.random() * 6;
+    this.dying = false; this.deathT = 0; this._lastPos = this.pos.clone();
   }
+
+  flash(d = 0.18) { this.flashT = d; }
 
   setHpBar() {
     if (!this.hpBar) return;
@@ -51,6 +55,7 @@ export class Entity {
     this.hp -= Math.max(1, reduced);
     this.lastAttacker = attacker;
     this.setHpBar();
+    this.flash();
     if (this.hp <= 0) { this.hp = 0; this.alive = false; }
   }
 
@@ -83,6 +88,12 @@ export function createHero(team, def) {
   // weapon — longer for casters, blade for the rest
   const weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, def.id === 'mage' ? 3.6 : 3, 5), mat(0xcfcfcf));
   weapon.position.set(1.1, 2.4, 0.2); weapon.rotation.z = Math.PI / 7; g.add(weapon);
+  g.userData.weapon = weapon;
+  g.userData.flashParts = [torso, head, cape];
+  const aura = new THREE.Mesh(new THREE.TorusGeometry(1.7, 0.16, 8, 24),
+    new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.85 }));
+  aura.rotation.x = -Math.PI / 2; aura.position.y = 0.35; aura.visible = false;
+  g.add(aura); g.userData.aura = aura;
 
   const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.2, 16),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 }));
@@ -100,7 +111,7 @@ export function createHero(team, def) {
     attackSpeed: def.attackSpeed, armor: def.armor,
     hpRegen: def.hpRegen, manaRegen: def.manaRegen,
     name: def.name, role: def.role, defId: def.id,
-    abilityMods: def.abilityMods,
+    abilityMods: def.abilityMods, accent,
     level: 1, xp: 0, gold: 600, kills: 0, deaths: 0,
     respawnTimer: 0, radius: 1.4,
     x: 0, z: 0,
@@ -113,6 +124,7 @@ export function createNeutral(x, z) {
   body.position.y = 1.1; body.castShadow = true; g.add(body);
   const spike = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 5), mat(0x6f5527));
   spike.position.y = 2.4; spike.castShadow = true; g.add(spike);
+  g.userData.flashParts = [body, spike];
   const bar = makeBar(2.4);
   bar.position.y = 3.2; g.add(bar);
 
@@ -134,6 +146,7 @@ export function createCreep(team, x, z) {
   body.position.y = 1.0; body.castShadow = true; g.add(body);
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), mat(0xe0c090));
   head.position.y = 2.0; head.castShadow = true; g.add(head);
+  g.userData.flashParts = [body, head];
   const bar = makeBar(2);
   bar.position.y = 2.9; g.add(bar);
 
@@ -157,6 +170,7 @@ export function createTower(team, x, z) {
   mid.position.y = 4; mid.castShadow = true; g.add(mid);
   const top = new THREE.Mesh(new THREE.ConeGeometry(2.0, 2.4, 6), mat(color));
   top.position.y = 7.2; top.castShadow = true; g.add(top);
+  g.userData.flashParts = [base, mid];
   const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.9, 0),
     new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.6, flatShading: true }));
   crystal.position.y = 8.8; g.add(crystal);
@@ -181,6 +195,7 @@ export function createBase(team, x, z) {
   const core = new THREE.Mesh(new THREE.IcosahedronGeometry(3.2, 0),
     new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.5, flatShading: true }));
   core.position.y = 4; core.castShadow = true; g.add(core);
+  g.userData.flashParts = [ring];
   g.userData.core = core;
   const bar = makeBar(7);
   bar.position.y = 9; g.add(bar);
@@ -194,3 +209,51 @@ export function createBase(team, x, z) {
 }
 
 export { TEAM };
+
+// Per-frame visual animation: billboarding, flash, attack swing/lunge, walk bob, death, surge aura.
+export function animateEntityVisual(e, dt, camera) {
+  const ud = e.mesh.userData;
+  if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
+  if (ud.gem) ud.gem.rotation.y += dt * 2;
+
+  if (e.flashT > 0) {
+    e.flashT -= dt;
+    const k = Math.max(0, e.flashT / 0.18) * 0.9;
+    for (const p of ud.flashParts || []) p.material.emissive.setRGB(k, k, k);
+  }
+
+  if (ud.aura) {
+    const on = e.buffE > 0;
+    ud.aura.visible = on;
+    if (on) { ud.aura.rotation.z += dt * 4; const s = 1 + Math.sin(e.walkPhase * 2) * 0.08; ud.aura.scale.set(s, s, s); }
+  }
+
+  if (e.dying) {
+    e.deathT += dt;
+    const k = Math.min(1, e.deathT / 0.5);
+    e.mesh.scale.setScalar(Math.max(0.02, 1 - k));
+    e.mesh.rotation.z = k * 1.5;
+    e.mesh.position.set(e.pos.x, -k * 1.0, e.pos.z);
+    return;
+  }
+
+  let offx = 0, offz = 0, bob = 0;
+  const fx = Math.sin(e.mesh.rotation.y), fz = Math.cos(e.mesh.rotation.y);
+  if (e.atkAnim > 0) {
+    e.atkAnim -= dt;
+    const p = 1 - Math.max(0, e.atkAnim) / 0.25;
+    const s = Math.sin(p * Math.PI);
+    offx = fx * s * 0.6; offz = fz * s * 0.6;
+    if (ud.weapon) ud.weapon.rotation.z = Math.PI / 7 - s * 1.5;
+  } else if (ud.weapon) {
+    ud.weapon.rotation.z += (Math.PI / 7 - ud.weapon.rotation.z) * Math.min(1, dt * 12);
+  }
+
+  if (e.kind === 'hero' || e.kind === 'creep') {
+    const moved = e._lastPos ? e.pos.distanceTo(e._lastPos) : 0;
+    if (moved > 0.015) { e.walkPhase += dt * 13; bob = Math.abs(Math.sin(e.walkPhase)) * 0.2; }
+  }
+
+  e.mesh.position.set(e.pos.x + offx, bob, e.pos.z + offz);
+  if (!e._lastPos) e._lastPos = e.pos.clone(); else e._lastPos.copy(e.pos);
+}
