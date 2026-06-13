@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { TEAM, COLORS, CREEP, TOWER, BASE, NEUTRAL } from './config.js';
+import { TEAM, COLORS, CREEP, TOWER, BASE, NEUTRAL, HERO_ANIMS } from './config.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 
 function mat(color, flat = true) {
   return new THREE.MeshStandardMaterial({ color, flatShading: flat, roughness: 0.85, metalness: 0.1 });
@@ -133,7 +134,8 @@ function buildAssassin(color, accent) {
   return { group: g, weapon, flashParts: [torso, head, cape] };
 }
 
-export function createHero(team, def) {
+export function createHero(team, def, asset) {
+  if (asset) return createGLTFHero(team, def, asset);
   const color = COLORS[team];
   const accent = def.accent;
   const built = def.id === 'mage' ? buildMage(color, accent)
@@ -270,9 +272,125 @@ export function createBase(team, x, z) {
 
 export { TEAM };
 
+// ---- glTF (KayKit) hero: detailed rigged model with skeletal animations ----
+function createGLTFHero(team, def, asset) {
+  const color = COLORS[team];
+  const accent = def.accent;
+  const g = new THREE.Group();
+
+  const model = cloneSkinned(asset.scene);
+  let box = new THREE.Box3().setFromObject(model);
+  const h = (box.max.y - box.min.y) || 1;
+  const s = 5.0 / h;
+  model.scale.setScalar(s);
+  box = new THREE.Box3().setFromObject(model);
+  model.position.y = -box.min.y;
+  model.rotation.y = Math.PI; // face +Z to match movement facing
+
+  const teamTint = new THREE.Color(team === 'radiant' ? 0xbcd2ff : 0xffc2c2);
+  const flashMeshes = [];
+  model.traverse((o) => {
+    if (o.isMesh) {
+      o.castShadow = true; o.frustumCulled = false;
+      if (o.material) {
+        o.material = o.material.clone();
+        if (o.material.color) o.material.color.multiply(teamTint);
+        flashMeshes.push(o);
+      }
+    }
+  });
+  g.add(model);
+
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.9, 1.9, 0.18, 22),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.4 }));
+  ring.position.y = 0.1; g.add(ring);
+
+  const aura = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.18, 8, 28),
+    new THREE.MeshBasicMaterial({ color: accent, transparent: true, opacity: 0.85 }));
+  aura.rotation.x = -Math.PI / 2; aura.position.y = 0.4; aura.visible = false;
+  g.add(aura); g.userData.aura = aura;
+
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0),
+    new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.85, flatShading: true }));
+  gem.position.y = 6.4; g.add(gem); g.userData.gem = gem;
+
+  const bar = makeBar(4.2); bar.position.y = 7.0; g.add(bar);
+
+  const mixer = new THREE.AnimationMixer(model);
+  const map = HERO_ANIMS[def.id] || HERO_ANIMS.guardian;
+  const byName = {}; asset.animations.forEach(a => { byName[a.name] = a; });
+  const actions = {};
+  for (const [k, name] of Object.entries(map)) { if (byName[name]) actions[k] = mixer.clipAction(byName[name]); }
+  if (actions.idle) actions.idle.play();
+
+  const ent = new Entity({
+    kind: 'hero', team, mesh: g, hpBar: bar,
+    hp: def.maxHp, maxHp: def.maxHp, mana: def.maxMana, maxMana: def.maxMana,
+    moveSpeed: def.moveSpeed, baseMoveSpeed: def.moveSpeed,
+    attackRange: def.attackRange, attackDamage: def.attackDamage,
+    attackSpeed: def.attackSpeed, armor: def.armor,
+    hpRegen: def.hpRegen, manaRegen: def.manaRegen,
+    name: def.name, role: def.role, defId: def.id,
+    attackType: def.attackType || 'melee', projectile: def.projectile || null,
+    abilities: def.abilities, accent,
+    level: 1, xp: 0, gold: 600, kills: 0, deaths: 0, respawnTimer: 0, radius: 1.4, slowT: 0,
+    x: 0, z: 0,
+  });
+  ent.isGLTF = true; ent.mixer = mixer; ent.actions = actions; ent.currentKey = 'idle';
+  ent.flashMeshes = flashMeshes; ent.oneShotT = 0; ent._deathStarted = false;
+  return ent;
+}
+
+function setLoopAction(e, key) {
+  if (e.currentKey === key) return;
+  const next = e.actions[key];
+  if (!next) return;
+  const prev = e.actions[e.currentKey];
+  next.enabled = true; next.setLoop(THREE.LoopRepeat, Infinity); next.reset(); next.fadeIn(0.2); next.play();
+  if (prev && prev !== next) prev.fadeOut(0.2);
+  e.currentKey = key;
+}
+
+export function playHeroAnim(e, key, dur = 0.6) {
+  if (!e || !e.isGLTF) return;
+  const a = e.actions[key];
+  if (!a) return;
+  a.reset(); a.setLoop(THREE.LoopOnce, 1); a.clampWhenFinished = true; a.enabled = true; a.fadeIn(0.06); a.play();
+  const cur = e.actions[e.currentKey];
+  if (cur && cur !== a) cur.fadeOut(0.06);
+  e.currentKey = key; e.oneShotT = dur;
+}
+
+function animateGLTFHero(e, dt, camera) {
+  e.mixer.update(dt);
+  const ud = e.mesh.userData;
+  if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
+  if (ud.gem) ud.gem.rotation.y += dt * 2;
+  if (ud.aura) { const on = e.buffE > 0; ud.aura.visible = on; if (on) ud.aura.rotation.z += dt * 4; }
+  if (e.flashT > 0) {
+    e.flashT -= dt; const k = Math.max(0, e.flashT / 0.18) * 0.8;
+    for (const m of e.flashMeshes) if (m.material && m.material.emissive) m.material.emissive.setRGB(k, k, k);
+  }
+  e.mesh.position.set(e.pos.x, 0, e.pos.z);
+  if (e.dying) {
+    if (!e._deathStarted) { playHeroAnim(e, 'death', 999); e._deathStarted = true; }
+    if (!e._lastPos) e._lastPos = e.pos.clone(); else e._lastPos.copy(e.pos);
+    return;
+  }
+  e._deathStarted = false;
+  e.oneShotT -= dt;
+  if (e.oneShotT <= 0) {
+    const moved = e._lastPos ? e.pos.distanceTo(e._lastPos) : 0;
+    setLoopAction(e, moved > 0.02 ? 'run' : 'idle');
+  }
+  if (!e._lastPos) e._lastPos = e.pos.clone(); else e._lastPos.copy(e.pos);
+}
+
+
 // Per-frame visual animation: billboarding, flash, attack swing/lunge, walk bob, death, surge aura.
 export function animateEntityVisual(e, dt, camera) {
   const ud = e.mesh.userData;
+  if (e.isGLTF) { animateGLTFHero(e, dt, camera); return; }
   if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
   if (ud.gem) ud.gem.rotation.y += dt * 2;
 

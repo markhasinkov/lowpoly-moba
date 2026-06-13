@@ -151,3 +151,10 @@ export const XP_PER_LEVEL = 220;
 export const HERO_RESPAWN = 7; // seconds base
 export const MAX_LEVEL = 18;
 export const MAX_ITEMS = 6;
+
+// KayKit animation clip names mapped to game states (all 3 characters share the same set)
+export const HERO_ANIMS = {
+  guardian: { idle: 'Idle', run: 'Running_A', death: 'Death_A', hit: 'Hit_A', attack: '2H_Melee_Attack_Chop', cast: 'Spellcast_Shoot' },
+  mage: { idle: 'Idle', run: 'Running_A', death: 'Death_A', hit: 'Hit_A', attack: 'Spellcast_Shoot', cast: 'Spellcast_Shoot' },
+  assassin: { idle: 'Idle', run: 'Running_A', death: 'Death_A', hit: 'Hit_A', attack: 'Dualwield_Melee_Attack_Slice', cast: 'Spellcast_Shoot' },
+};

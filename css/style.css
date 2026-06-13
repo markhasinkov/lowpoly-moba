@@ -275,3 +275,17 @@ canvas { display: block; }
     linear-gradient(180deg, rgba(255,220,150,0.05), rgba(40,60,90,0.06));
   mix-blend-mode: multiply;
 }
+
+/* Loading overlay */
+#loading {
+  position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 40%, #16302a, #06100c);
+}
+.ld-inner { text-align: center; color: #cdeedd; }
+.ld-spinner {
+  width: 54px; height: 54px; margin: 0 auto 16px; border-radius: 50%;
+  border: 5px solid rgba(127,224,168,.2); border-top-color: #7fe0a8;
+  animation: ldspin 0.9s linear infinite;
+}
+@keyframes ldspin { to { transform: rotate(360deg); } }
+#loading-text { font-size: 16px; font-weight: 600; letter-spacing: .3px; }

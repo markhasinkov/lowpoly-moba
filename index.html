@@ -8,7 +8,8 @@
   <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
     }
   }
   </script>
@@ -98,6 +99,9 @@
     Наведи на иконку — описание скилла<br/>
     B — магазин · S — стоп
   </div>
+
+  <!-- Loading overlay -->
+  <div id="loading"><div class="ld-inner"><div class="ld-spinner"></div><div id="loading-text">Загрузка моделей…</div></div></div>
 
   <!-- Hero selection -->
   <div id="hero-select">

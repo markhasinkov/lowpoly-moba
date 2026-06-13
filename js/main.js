@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import {
-  createHero, createCreep, createTower, createBase, createNeutral, animateEntityVisual,
+  createHero, createCreep, createTower, createBase, createNeutral, animateEntityVisual, playHeroAnim,
 } from './entities.js';
 import { EffectSystem } from './abilities.js';
 import {
   updateCreep, updateTower, updateEnemyHero, updateNeutral, moveToward, nearestEnemy,
 } from './ai.js';
 import { UI } from './ui.js';
+import { preloadHeroes, heroAssets } from './assets.js';
 import {
   TEAM, WORLD, CREEP, scaleAbility, ITEMS, AI_BUILD_ORDER,
   HERO_DEFS, getHeroDef, NEUTRAL, CAMPS,
@@ -256,6 +257,7 @@ function castForHero(hero, key, aimPos, isPlayer) {
   }
   hero.mana -= s.manaCost;
   hero[cdKey] = s.cooldown;
+  if (hero.isGLTF) playHeroAnim(hero, ab.type === 'dash' ? 'attack' : 'cast', 0.7);
   if (isPlayer) ui.flashAbility(key);
   return true;
 }
@@ -284,6 +286,7 @@ function attack(attacker, target) {
   if (attacker.attackCd > 0 || !target.alive) return;
   attacker.attackCd = 1 / attacker.attackSpeed;
   attacker.atkAnim = 0.25;
+  if (attacker.isGLTF) playHeroAnim(attacker, 'attack', Math.min(0.7, 1 / attacker.attackSpeed));
   if (attacker.attackType === 'ranged') {
     fx.spawnBasic(attacker, target, attacker.attackDamage, attacker.team === 'radiant' ? 0x8fd0ff : 0xffb088);
   } else {
@@ -393,6 +396,11 @@ function respawnHero(hero) {
   hero.target = null; hero.attackTarget = null;
   hero.dash = null; hero.slowT = 0;
   if (hero.guardT > 0) { hero.armor -= (hero.guardBonus || 0); hero.guardBonus = 0; hero.guardT = 0; }
+  if (hero.isGLTF) {
+    for (const k in hero.actions) hero.actions[k].stop();
+    hero._deathStarted = false; hero.oneShotT = 0; hero.currentKey = 'idle';
+    if (hero.actions.idle) hero.actions.idle.reset().play();
+  }
   hero.setHpBar();
 }
 
@@ -454,12 +462,12 @@ function startGame(playerDefId) {
   add(createTower(TEAM.DIRE, t[2].x, t[2].z));
   add(createTower(TEAM.DIRE, t[3].x, t[3].z));
 
-  player = add(createHero(TEAM.RADIANT, playerDef));
+  player = add(createHero(TEAM.RADIANT, playerDef, heroAssets[playerDef.id]));
   player.pos.set(WORLD.radiantBase.x + 4, 0, WORLD.radiantBase.z + 4);
   player.mesh.position.copy(player.pos);
   initHero(player);
 
-  enemy = add(createHero(TEAM.DIRE, enemyDef));
+  enemy = add(createHero(TEAM.DIRE, enemyDef, heroAssets[enemyDef.id]));
   enemy.pos.set(WORLD.direBase.x - 4, 0, WORLD.direBase.z - 4);
   enemy.mesh.position.copy(enemy.pos);
   initHero(enemy);
@@ -521,7 +529,7 @@ function animate() {
     const e = entities[i];
     animateEntityVisual(e, dt, camera);
     if (e.dying && e.deathT >= 0.5) {
-      if (e.kind === 'hero') { e.mesh.visible = false; }
+      if (e.kind === 'hero') { if (!e.isGLTF) e.mesh.visible = false; }
       else { removeEntity(e); }
     }
   }
@@ -604,5 +612,18 @@ function endGame(playerWon) {
 
 document.getElementById('restart')?.addEventListener('click', () => location.reload());
 
-ui.showHeroSelect(HERO_DEFS, (id) => startGame(id));
 animate();
+
+(async () => {
+  const loadingText = document.getElementById('loading-text');
+  try {
+    await preloadHeroes((done, total) => {
+      if (loadingText) loadingText.textContent = `Загрузка моделей… ${done}/${total}`;
+    });
+  } catch (e) {
+    console.error('Не удалось загрузить модели, использую запасные примитивы', e);
+  }
+  const ld = document.getElementById('loading');
+  if (ld) ld.style.display = 'none';
+  ui.showHeroSelect(HERO_DEFS, (id) => startGame(id));
+})();
