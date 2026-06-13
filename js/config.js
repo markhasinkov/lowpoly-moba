@@ -45,6 +45,10 @@ export const HERO_DEFS = [
       E: { key: 'E', name: 'Рывок-таран', icon: '💥', type: 'dash', manaCost: 70, cooldown: 12,
         damage: 60, damagePerLevel: 30, range: 26, radius: 6,
         desc: 'Рывок к курсору, урон в точке прибытия.' },
+      R: { key: 'R', name: 'Несокрушимый', icon: '⚜️', type: 'ultimate_guard', manaCost: 150, cooldown: 75, ultReq: 6,
+        damage: 160, damagePerLevel: 130, radius: 13, slow: { factor: 0.45, dur: 2.5 },
+        armorBonus: 22, armorPerLevel: 12, healPerSec: 70, healPerLevel: 45, duration: 7,
+        desc: 'Удар по площади с замедлением, затем мощная броня и лечение 7с.' },
     },
   },
   {
@@ -62,6 +66,9 @@ export const HERO_DEFS = [
         desc: 'Большой взрыв вокруг себя.' },
       E: { key: 'E', name: 'Блинк', icon: '✨', type: 'blink', manaCost: 60, cooldown: 11,
         range: 28, desc: 'Мгновенный телепорт к курсору.' },
+      R: { key: 'R', name: 'Метеор', icon: '☄️', type: 'meteor', manaCost: 175, cooldown: 80, ultReq: 6,
+        damage: 300, damagePerLevel: 180, range: 46, radius: 11, delay: 1.1, slow: { factor: 0.5, dur: 2 },
+        desc: 'Призывает метеор в точке — огромный урон по площади через 1.1с.' },
     },
   },
   {
@@ -80,6 +87,9 @@ export const HERO_DEFS = [
       E: { key: 'E', name: 'Тень', icon: '👻', type: 'buff_speed', manaCost: 50, cooldown: 11,
         speedBonus: 6, speedBonusPerLevel: 2, duration: 3.5,
         desc: 'Резкое ускорение на 3.5с.' },
+      R: { key: 'R', name: 'Жатва', icon: '☠️', type: 'blink_strike', manaCost: 120, cooldown: 65, ultReq: 6,
+        damage: 340, damagePerLevel: 210, range: 30, radius: 6.5, speedBonus: 5, duration: 3,
+        desc: 'Телепорт в точку и казнящий удар по ближайшему врагу. +скорость после.' },
     },
   },
 ];
@@ -118,6 +128,7 @@ export const BASE = {
 };
 
 export const MAX_ABILITY_LEVEL = 4;
+export const MAX_ULT_LEVEL = 3; // ultimate (R) caps at 3, gated by hero level via ability.ultReq
 
 // Compute effective values of a hero ability object at a given learned level (1..4).
 export function scaleAbility(ab, level) {
@@ -142,10 +153,15 @@ export const ITEMS = [
   { id: 'vitality',   name: 'Сердце стража',   icon: '❤️', cost: 1150, desc: '+250 HP',                      stats: { maxHp: 250 } },
   { id: 'fury',       name: 'Клык ярости',     icon: '🔥', cost: 1300, desc: '+0.45 скорости атаки',         stats: { attackSpeed: 0.45 } },
   { id: 'greatsword', name: 'Эспадон',         icon: '⚔️', cost: 2100, desc: '+45 урона, +0.2 скор.атаки',   stats: { attackDamage: 45, attackSpeed: 0.2 } },
+  { id: 'crit',       name: 'Клинок палача',   icon: '🩸', cost: 1600, desc: '+25% шанс крита',                 stats: { critChance: 0.25 } },
+  { id: 'vampire',    name: 'Вампирский эфес',  icon: '🦦', cost: 1500, desc: '+25 урона, +18% вампиризма',      stats: { attackDamage: 25, lifesteal: 0.18 } },
+  { id: 'arcane',     name: 'Посох архимага',   icon: '🪄', cost: 1700, desc: '+30% к урону умений, +200 маны',  stats: { spellAmp: 0.30, maxMana: 200 } },
+  { id: 'haste',      name: 'Печать ускорения', icon: '⏱️', cost: 1400, desc: '-25% перезарядка умений',         stats: { cdr: 0.25 } },
+  { id: 'crown',      name: 'Корона войны',     icon: '👑', cost: 2700, desc: '+35 урона, +20% крит, +10% вамп', stats: { attackDamage: 35, critChance: 0.20, lifesteal: 0.10 } },
 ];
 
 // AI buy priority (item ids in order)
-export const AI_BUILD_ORDER = ['boots', 'blade', 'plate', 'vitality', 'fury', 'greatsword'];
+export const AI_BUILD_ORDER = ['boots', 'blade', 'vampire', 'plate', 'crit', 'vitality', 'fury', 'greatsword', 'crown'];
 
 export const XP_PER_LEVEL = 220;
 export const HERO_RESPAWN = 7; // seconds base

@@ -1,4 +1,4 @@
-import { scaleAbility, ITEMS, MAX_ABILITY_LEVEL } from './config.js';
+import { scaleAbility, ITEMS, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL } from './config.js';
 
 export class UI {
   constructor() {
@@ -22,6 +22,7 @@ export class UI {
       Q: document.getElementById('ab-Q'),
       W: document.getElementById('ab-W'),
       E: document.getElementById('ab-E'),
+      R: document.getElementById('ab-R'),
     };
     this.heroSelect = document.getElementById('hero-select');
     this.heroCards = document.getElementById('hero-cards');
@@ -32,7 +33,7 @@ export class UI {
     this.callbacks = { onBuy: () => {}, onLevel: () => {} };
 
     // ability level-up buttons
-    for (const k of ['Q', 'W', 'E']) {
+    for (const k of ['Q', 'W', 'E', 'R']) {
       const btn = this.abilityEls[k].querySelector('.levelup');
       if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevel(k); });
     }
@@ -107,7 +108,7 @@ export class UI {
 
   updateAbilities(hero) {
     if (!hero.abilities) return;
-    for (const k of ['Q', 'W', 'E']) {
+    for (const k of ['Q', 'W', 'E', 'R']) {
       const el = this.abilityEls[k];
       const ab = hero.abilities[k];
       const lvl = hero.abilityLevels ? hero.abilityLevels[k] : 0;
@@ -129,7 +130,9 @@ export class UI {
       const pips = el.querySelectorAll('.pip');
       pips.forEach((p, i) => p.classList.toggle('filled', i < lvl));
       const btn = el.querySelector('.levelup');
-      const canLevel = hero.skillPoints > 0 && lvl < MAX_ABILITY_LEVEL;
+      const cap = k === 'R' ? MAX_ULT_LEVEL : MAX_ABILITY_LEVEL;
+      let canLevel = hero.skillPoints > 0 && lvl < cap;
+      if (k === 'R' && canLevel && hero.level < ((ab.ultReq || 6) + lvl * 5)) canLevel = false;
       if (btn) btn.style.display = canLevel ? 'flex' : 'none';
       el.classList.toggle('learnable', canLevel);
       el.classList.toggle('locked', lvl < 1);
@@ -148,7 +151,8 @@ export class UI {
     else if (ab.type === 'projectile') effect = `Урон ${Math.round(shown.damage)}${ab.slow ? ', замедляет' : ''}`;
     else effect = `Урон ${Math.round(shown.damage)}, радиус ${Math.round(shown.radius)}`;
     const head = lvl < 1 ? `${ab.icon} ${ab.name} — НЕ ИЗУЧЕНА` : `${ab.icon} ${ab.name} — ур.${lvl}/${MAX_ABILITY_LEVEL}`;
-    const learn = canLevel ? `\n► Можно прокачать (нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'})` : '';
+    const numKey = key === 'Q' ? '1' : key === 'W' ? '2' : key === 'E' ? '3' : '4';
+    const learn = canLevel ? `\n► Можно прокачать (нажми ${numKey})` : '';
     return `${head}\n${ab.desc}\n${effect}\nМана: ${ab.manaCost} · Кулдаун: ${ab.cooldown}с${learn}`;
   }
 

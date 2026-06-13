@@ -12,7 +12,7 @@ import { preloadHeroes, preloadNature, heroAssets } from './assets.js';
 import {
   TEAM, WORLD, CREEP, scaleAbility, ITEMS, AI_BUILD_ORDER,
   HERO_DEFS, getHeroDef, NEUTRAL, CAMPS,
-  XP_PER_LEVEL, HERO_RESPAWN, MAX_LEVEL, MAX_ABILITY_LEVEL, MAX_ITEMS,
+  XP_PER_LEVEL, HERO_RESPAWN, MAX_LEVEL, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, MAX_ITEMS,
 } from './config.js';
 
 const { scene, renderer, camera } = createScene();
@@ -22,6 +22,7 @@ const fx = new EffectSystem(scene);
 // ---- State ----
 const entities = [];
 const camps = [];
+const pendingStrikes = []; // delayed AoE strikes (e.g. meteor ultimate)
 let player = null, enemy = null;
 let started = false, gameEnded = false;
 let matchTime = 0, waveTimer = 3, hudTimer = 0;
@@ -124,13 +125,15 @@ window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
   if (k === 'b' && started) { ui.toggleShop(); return; }
   if (!started || gameEnded || !player || !player.alive) return;
-  if (e.shiftKey && (k === 'q' || k === 'w' || k === 'e')) { levelAbility(player, k.toUpperCase()); return; }
+  if (e.shiftKey && (k === 'q' || k === 'w' || k === 'e' || k === 'r')) { levelAbility(player, k.toUpperCase()); return; }
   if (k === 'q') castAbility('Q');
   else if (k === 'w') castAbility('W');
   else if (k === 'e') castAbility('E');
+  else if (k === 'r') castAbility('R');
   else if (k === '1') levelAbility(player, 'Q');
   else if (k === '2') levelAbility(player, 'W');
   else if (k === '3') levelAbility(player, 'E');
+  else if (k === '4') levelAbility(player, 'R');
   else if (k === 's') { player.target = null; player.attackTarget = null; }
 });
 
@@ -147,10 +150,17 @@ function nearestEnemyAtPoint(point, radius) {
 // ---- Progression ----
 function levelAbility(hero, key) {
   if (hero.skillPoints <= 0) { if (hero === player) ui.showToast('Нет очков умений — получи уровень', 1.3); return; }
-  if (hero.abilityLevels[key] >= MAX_ABILITY_LEVEL) { if (hero === player) ui.showToast('Способность уже максимальна', 1.2); return; }
+  const isUlt = key === 'R';
+  const cap = isUlt ? MAX_ULT_LEVEL : MAX_ABILITY_LEVEL;
+  const cur = hero.abilityLevels[key] || 0;
+  if (cur >= cap) { if (hero === player) ui.showToast('Способность уже максимальна', 1.2); return; }
+  if (isUlt) {
+    const reqLevel = (hero.abilities.R.ultReq || 6) + cur * 5;
+    if (hero.level < reqLevel) { if (hero === player) ui.showToast(`Ультимейт откроется на ур.${reqLevel}`, 1.8); return; }
+  }
   hero.abilityLevels[key]++;
   hero.skillPoints--;
-  if (hero === player) { ui.showToast(`${ABILITIES[key].name} прокачан до ур.${hero.abilityLevels[key]}`, 1.3); refreshHud(); }
+  if (hero === player) { ui.showToast(`${hero.abilities[key].name} прокачан до ур.${hero.abilityLevels[key]}`, 1.3); refreshHud(); }
 }
 
 function applyItemStats(hero, stats, sign = 1) {
@@ -199,6 +209,7 @@ function castForHero(hero, key, aimPos, isPlayer) {
   const ab = hero.abilities[key];
   if (lvl < 1) { if (isPlayer) ui.showToast(`Способность не изучена — нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'}`, 1.8); return false; }
   const s = scaleAbility(ab, lvl);
+  if (s.damage) s.damage *= (1 + (hero.spellAmp || 0));
   const cdKey = 'cd' + key;
   if (hero[cdKey] > 0) { if (isPlayer) ui.showToast('На перезарядке', 0.8); return false; }
   if (hero.mana < s.manaCost) { if (isPlayer) ui.showToast('Недостаточно маны', 1); return false; }
@@ -256,9 +267,53 @@ function castForHero(hero, key, aimPos, isPlayer) {
       hero.target = null; hero.attackTarget = null;
       break;
     }
+    case 'ultimate_guard': {
+      fx.spawnCastFlash(hero.pos, col);
+      fx.spawnNova(hero, s.radius);
+      for (const e of entities) {
+        if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius) {
+          applyDamage(e, s.damage, hero);
+          if (ab.slow) { e.slowT = ab.slow.dur; e.slowFactor = ab.slow.factor; }
+        }
+      }
+      if (hero.guardT > 0) hero.armor -= (hero.guardBonus || 0);
+      hero.guardBonus = s.armorBonus; hero.armor += s.armorBonus;
+      hero.guardHeal = s.healPerSec; hero.guardT = s.duration;
+      if (isPlayer) ui.showToast('НЕСОКРУШИМЫЙ!', 1.4);
+      break;
+    }
+    case 'meteor': {
+      const aim = dir.lengthSq() < 0.01 ? hero.pos.clone() : hero.pos.clone().addScaledVector(dir.clone().normalize(), Math.min(s.range, dir.length()));
+      fx.spawnCastCircle(aim, hero.accent);
+      pendingStrikes.push({ pos: aim, t: ab.delay || 1.1, radius: s.radius, damage: s.damage, team: hero.team, owner: hero, slow: ab.slow, color: hero.accent });
+      if (isPlayer) ui.showToast('Метеор призван!', 1.2);
+      break;
+    }
+    case 'blink_strike': {
+      if (dir.lengthSq() > 0.01) {
+        const dist = Math.min(s.range, dir.length()); dir.normalize();
+        hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
+        fx.spawnCastFlash(hero.pos, hero.accent);
+        hero.pos.addScaledVector(dir, dist);
+        fx.spawnCastFlash(hero.pos, hero.accent);
+      }
+      let best = null, bd = s.radius;
+      for (const e of entities) {
+        if (e.alive && e.team !== hero.team && e.team !== 'neutral') {
+          const d = hero.pos.distanceTo(e.pos);
+          if (d < bd) { bd = d; best = e; }
+        }
+      }
+      if (best) { fx.spawnImpact(best.pos, hero.accent); applyDamage(best, s.damage, hero); }
+      hero.buffE = Math.max(hero.buffE || 0, s.duration);
+      hero.moveSpeed = hero.baseMoveSpeed + (s.speedBonus || 5);
+      hero.target = null; hero.attackTarget = null;
+      if (isPlayer) ui.showToast('ЖАТВА!', 1.4);
+      break;
+    }
   }
   hero.mana -= s.manaCost;
-  hero[cdKey] = s.cooldown;
+  hero[cdKey] = s.cooldown * (1 - Math.min(0.6, hero.cdr || 0));
   if (hero.isGLTF) playHeroAnim(hero, ab.type === 'dash' ? 'attack' : 'cast', 0.7);
   if (isPlayer) ui.flashAbility(key);
   return true;
@@ -283,19 +338,35 @@ function updateDash(hero, dt) {
   }
 }
 
+function resolveStrike(st) {
+  fx.spawnImpact(st.pos, st.color);
+  fx.spawnCastFlash(st.pos, st.color);
+  for (const e of entities) {
+    if (e.alive && e.team !== st.team && e.team !== 'neutral' && Math.hypot(e.pos.x - st.pos.x, e.pos.z - st.pos.z) <= st.radius) {
+      applyDamage(e, st.damage, st.owner);
+      if (st.slow) { e.slowT = st.slow.dur; e.slowFactor = st.slow.factor; }
+    }
+  }
+}
+
 // ---- Combat ----
 function attack(attacker, target) {
   if (attacker.attackCd > 0 || !target.alive) return;
   attacker.attackCd = 1 / attacker.attackSpeed;
   attacker.atkAnim = 0.25;
   if (attacker.isGLTF) playHeroAnim(attacker, 'attack', Math.min(0.7, 1 / attacker.attackSpeed));
+  let dmg = attacker.attackDamage;
+  const isCrit = (attacker.critChance || 0) > 0 && Math.random() < attacker.critChance;
+  if (isCrit) dmg *= (attacker.critMult || 1.8);
   if (attacker.attackType === 'ranged') {
-    fx.spawnBasic(attacker, target, attacker.attackDamage, attacker.team === 'radiant' ? 0x8fd0ff : 0xffb088);
+    fx.spawnBasic(attacker, target, dmg, attacker.team === 'radiant' ? 0x8fd0ff : 0xffb088);
   } else {
-    applyDamage(target, attacker.attackDamage, attacker);
+    applyDamage(target, dmg, attacker);
     if (attacker.kind === 'hero' || attacker.kind === 'creep')
       fx.spawnHit(target.pos, attacker.team === 'dire' ? 0xff9966 : 0xbfe6ff);
   }
+  if (isCrit) fx.spawnImpact(target.pos, 0xffe066);
+  if ((attacker.lifesteal || 0) > 0 && attacker.alive) attacker.hp = Math.min(attacker.maxHp, attacker.hp + dmg * attacker.lifesteal);
 }
 
 function applyDamage(target, amount, attacker) {
@@ -327,7 +398,12 @@ function spendEnemySkillPoints(hero) {
   const order = ['Q', 'W', 'Q', 'E', 'Q', 'W', 'Q', 'W', 'E', 'W', 'E', 'E'];
   while (hero.skillPoints > 0) {
     let learned = false;
-    for (const key of order) {
+    const rAb = hero.abilities.R;
+    const rCur = hero.abilityLevels.R || 0;
+    if (rAb && rCur < MAX_ULT_LEVEL && hero.level >= (rAb.ultReq || 6) + rCur * 5) {
+      hero.abilityLevels.R++; hero.skillPoints--; learned = true;
+    }
+    if (!learned) for (const key of order) {
       if (hero.abilityLevels[key] < MAX_ABILITY_LEVEL) { hero.abilityLevels[key]++; hero.skillPoints--; learned = true; break; }
     }
     if (!learned) break;
@@ -442,10 +518,11 @@ function updateCamps(dt) {
 
 // ---- Lifecycle ----
 function initHero(hero) {
-  hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.buffE = 0;
-  hero.abilityLevels = { Q: 0, W: 0, E: 0 };
+  hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.cdR = 0; hero.buffE = 0;
+  hero.abilityLevels = { Q: 0, W: 0, E: 0, R: 0 };
   hero.skillPoints = 1; hero.items = []; hero.aiBuyIndex = 0; hero._ghostT = 0;
   hero.dash = null; hero.guardT = 0; hero.guardBonus = 0; hero.slowT = 0;
+  hero.critChance = 0; hero.critMult = 1.8; hero.lifesteal = 0; hero.spellAmp = 0; hero.cdr = 0;
 }
 
 function lanePoint(t) {
@@ -499,7 +576,7 @@ function updateCamera() {
 }
 
 function tickCooldowns(hero, dt) {
-  for (const k of ['cdQ', 'cdW', 'cdE']) hero[k] = Math.max(0, hero[k] - dt);
+  for (const k of ['cdQ', 'cdW', 'cdE', 'cdR']) hero[k] = Math.max(0, hero[k] - dt);
   if (hero.buffE > 0) { hero.buffE -= dt; if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; }
   if (hero.slowT > 0) hero.slowT -= dt;
   if (hero.guardT > 0) {
@@ -558,6 +635,11 @@ function update(dt) {
   if (waveTimer <= 0) { spawnWave(); waveTimer = CREEP.spawnInterval; }
 
   for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e._hitCd > 0) e._hitCd -= dt; if (e.slowT > 0 && e.kind !== 'hero') e.slowT -= dt; }
+  for (let i = pendingStrikes.length - 1; i >= 0; i--) {
+    const st = pendingStrikes[i];
+    st.t -= dt;
+    if (st.t <= 0) { resolveStrike(st); pendingStrikes.splice(i, 1); }
+  }
   if (player.alive) player.gold += GOLD_PER_SEC * dt;
   if (enemy.alive) enemy.gold += GOLD_PER_SEC * dt;
 
