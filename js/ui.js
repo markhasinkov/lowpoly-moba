@@ -23,6 +23,8 @@ export class UI {
       W: document.getElementById('ab-W'),
       E: document.getElementById('ab-E'),
     };
+    this.heroSelect = document.getElementById('hero-select');
+    this.heroCards = document.getElementById('hero-cards');
     this.minimap = document.getElementById('minimap');
     this.mmCtx = this.minimap.getContext('2d');
     this._toastT = 0;
@@ -41,6 +43,35 @@ export class UI {
   toggleShop() {
     this.shopOpen = !this.shopOpen;
     this.shopEl.style.display = this.shopOpen ? 'block' : 'none';
+  }
+
+  showHeroSelect(defs, onPick) {
+    if (!this.heroCards) return;
+    const roleColor = { 'Танк': '#8fe0ff', 'Маг': '#c08bff', 'Убийца': '#ffd24f' };
+    let html = '';
+    for (const d of defs) {
+      const c = roleColor[d.role] || '#7fe0a8';
+      html += `<div class="hero-card" data-id="${d.id}" style="--accent:${c}">
+        <div class="hc-gem"></div>
+        <div class="hc-name">${d.name}</div>
+        <div class="hc-role">${d.role}</div>
+        <div class="hc-desc">${d.desc}</div>
+        <div class="hc-stats">
+          <span>❤️ ${d.maxHp}</span><span>🗡️ ${d.attackDamage}</span>
+          <span>🛡️ ${d.armor}</span><span>👟 ${d.moveSpeed}</span>
+        </div>
+        <button class="hc-pick">Играть</button>
+      </div>`;
+    }
+    this.heroCards.innerHTML = html;
+    this.heroCards.querySelectorAll('.hero-card').forEach(el => {
+      el.addEventListener('click', () => onPick(el.dataset.id));
+    });
+    this.heroSelect.style.display = 'flex';
+  }
+
+  hideHeroSelect() {
+    if (this.heroSelect) this.heroSelect.style.display = 'none';
   }
 
   showToast(msg, dur = 2.2) {

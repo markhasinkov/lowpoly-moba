@@ -1,15 +1,16 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import {
-  createHero, createCreep, createTower, createBase,
+  createHero, createCreep, createTower, createBase, createNeutral,
 } from './entities.js';
 import { EffectSystem } from './abilities.js';
 import {
-  updateCreep, updateTower, updateEnemyHero, moveToward, nearestEnemy,
+  updateCreep, updateTower, updateEnemyHero, updateNeutral, moveToward, nearestEnemy,
 } from './ai.js';
 import { UI } from './ui.js';
 import {
   TEAM, WORLD, CREEP, ABILITIES, abilityStat, ITEMS, AI_BUILD_ORDER,
+  HERO_DEFS, getHeroDef, NEUTRAL, CAMPS,
   XP_PER_LEVEL, HERO_RESPAWN, MAX_LEVEL, MAX_ABILITY_LEVEL, MAX_ITEMS,
 } from './config.js';
 
@@ -17,61 +18,26 @@ const { scene, renderer, camera } = createScene();
 const ui = new UI();
 const fx = new EffectSystem(scene);
 
-// ---- World entities ----
+// ---- State ----
 const entities = [];
+const camps = [];
+let player = null, enemy = null;
+let started = false, gameEnded = false;
+let matchTime = 0, waveTimer = 3, hudTimer = 0;
+const clock = new THREE.Clock();
+const camOffset = new THREE.Vector3(0, 46, 38);
+
 function add(e) { scene.add(e.mesh); entities.push(e); return e; }
 
-const radiantBase = add(createBase(TEAM.RADIANT, WORLD.radiantBase.x, WORLD.radiantBase.z));
-const direBase = add(createBase(TEAM.DIRE, WORLD.direBase.x, WORLD.direBase.z));
-
-function lanePoint(t) {
-  return {
-    x: WORLD.radiantBase.x + (WORLD.direBase.x - WORLD.radiantBase.x) * t,
-    z: WORLD.radiantBase.z + (WORLD.direBase.z - WORLD.radiantBase.z) * t,
-  };
-}
-const tRad2 = lanePoint(0.18), tRad1 = lanePoint(0.36);
-const tDire1 = lanePoint(0.64), tDire2 = lanePoint(0.82);
-add(createTower(TEAM.RADIANT, tRad2.x, tRad2.z));
-add(createTower(TEAM.RADIANT, tRad1.x, tRad1.z));
-add(createTower(TEAM.DIRE, tDire1.x, tDire1.z));
-add(createTower(TEAM.DIRE, tDire2.x, tDire2.z));
-
-// ---- Heroes ----
-function initHero(hero) {
-  hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.buffE = 0;
-  hero.abilityLevels = { Q: 0, W: 0, E: 0 };
-  hero.skillPoints = 1; // level-1 point
-  hero.items = [];
-  hero.aiBuyIndex = 0;
-}
-
-const player = add(createHero(TEAM.RADIANT));
-player.pos.set(WORLD.radiantBase.x + 4, 0, WORLD.radiantBase.z + 4);
-player.mesh.position.copy(player.pos);
-initHero(player);
-
-const enemy = add(createHero(TEAM.DIRE));
-enemy.pos.set(WORLD.direBase.x - 4, 0, WORLD.direBase.z - 4);
-enemy.mesh.position.copy(enemy.pos);
-initHero(enemy);
-enemy.state = 'push';
-spendEnemySkillPoints(enemy); // learn level-1 ability
-
-// ---- Camera follow ----
-const camOffset = new THREE.Vector3(0, 46, 38);
-function updateCamera() {
-  const desired = player.pos.clone().add(camOffset);
-  camera.position.lerp(desired, 0.12);
-  camera.lookAt(player.pos.x, 0, player.pos.z);
-}
-camera.position.copy(player.pos.clone().add(camOffset));
+// Idle menu camera (slow orbit over the arena while choosing a hero)
+camera.position.set(0, 95, 70);
+camera.lookAt(0, 0, 0);
 
 // ---- Input ----
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-let pointerWorld = new THREE.Vector3();
+const pointerWorld = new THREE.Vector3();
 
 function screenToGround(clientX, clientY) {
   mouse.x = (clientX / window.innerWidth) * 2 - 1;
@@ -84,14 +50,12 @@ function screenToGround(clientX, clientY) {
 
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (!player.alive || gameEnded) return;
+  if (!started || !player || !player.alive || gameEnded) return;
   const hit = screenToGround(e.clientX, e.clientY);
   if (!hit) return;
-  if (e.button === 2 || e.button === 0) {
-    const foe = nearestEnemyAtPoint(hit, 3.5);
-    if (foe) { player.attackTarget = foe; player.target = null; }
-    else { player.target = hit.clone(); player.attackTarget = null; }
-  }
+  const foe = nearestEnemyAtPoint(hit, 3.5);
+  if (foe) { player.attackTarget = foe; player.target = null; }
+  else { player.target = hit.clone(); player.attackTarget = null; }
 });
 renderer.domElement.addEventListener('pointermove', (e) => {
   const hit = screenToGround(e.clientX, e.clientY);
@@ -100,12 +64,9 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
-  if (k === 'b') { ui.toggleShop(); return; }
-  if (gameEnded || !player.alive) return;
-  if (e.shiftKey && (k === 'q' || k === 'w' || k === 'e')) {
-    levelAbility(player, k.toUpperCase());
-    return;
-  }
+  if (k === 'b' && started) { ui.toggleShop(); return; }
+  if (!started || gameEnded || !player || !player.alive) return;
+  if (e.shiftKey && (k === 'q' || k === 'w' || k === 'e')) { levelAbility(player, k.toUpperCase()); return; }
   if (k === 'q') castAbility('Q');
   else if (k === 'w') castAbility('W');
   else if (k === 'e') castAbility('E');
@@ -125,16 +86,13 @@ function nearestEnemyAtPoint(point, radius) {
   return best;
 }
 
-// ---- Progression: abilities & items ----
+// ---- Progression ----
 function levelAbility(hero, key) {
   if (hero.skillPoints <= 0) { if (hero === player) ui.showToast('Нет очков умений', 1); return; }
   if (hero.abilityLevels[key] >= MAX_ABILITY_LEVEL) { if (hero === player) ui.showToast('Способность максимальна', 1); return; }
   hero.abilityLevels[key]++;
   hero.skillPoints--;
-  if (hero === player) {
-    ui.showToast(`${ABILITIES[key].name} → ур.${hero.abilityLevels[key]}`, 1.2);
-    refreshHud();
-  }
+  if (hero === player) { ui.showToast(`${ABILITIES[key].name} → ур.${hero.abilityLevels[key]}`, 1.2); refreshHud(); }
 }
 
 function applyItemStats(hero, stats, sign = 1) {
@@ -146,9 +104,7 @@ function applyItemStats(hero, stats, sign = 1) {
       hero.baseMoveSpeed += delta;
       if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed;
       else hero.moveSpeed += delta;
-    } else {
-      hero[k] = (hero[k] || 0) + delta;
-    }
+    } else { hero[k] = (hero[k] || 0) + delta; }
   }
 }
 
@@ -174,6 +130,7 @@ ui.callbacks = {
 };
 
 function refreshHud() {
+  if (!player) return;
   ui.updateHero(player);
   ui.updateAbilities(player);
   ui.updateInventory(player);
@@ -181,10 +138,13 @@ function refreshHud() {
 }
 
 // ---- Abilities ----
+function abilityMod(hero, key) { return (hero.abilityMods && hero.abilityMods[key]) || 1; }
+
 function castAbility(key) {
   const lvl = player.abilityLevels[key];
   if (lvl < 1) { ui.showToast('Сначала изучи способность (1/2/3 или Shift)', 1.4); return; }
   const s = abilityStat(key, lvl);
+  const mod = abilityMod(player, key);
   const cdKey = 'cd' + key;
   if (player[cdKey] > 0) return;
   if (player.mana < s.manaCost) { ui.showToast('Недостаточно маны', 1); return; }
@@ -193,17 +153,17 @@ function castAbility(key) {
     const dir = new THREE.Vector3().subVectors(pointerWorld, player.pos).setY(0);
     if (dir.lengthSq() < 0.01) return;
     player.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-    fx.spawnBolt(player, dir, entities, s.damage);
+    fx.spawnBolt(player, dir, entities, s.damage * mod);
   } else if (key === 'W') {
     fx.spawnNova(player, s.radius);
     for (const e of entities) {
       if (e.alive && e.team !== player.team && player.pos.distanceTo(e.pos) <= s.radius) {
-        applyDamage(e, s.damage, player);
+        applyDamage(e, s.damage * mod, player);
       }
     }
   } else if (key === 'E') {
     player.buffE = s.duration;
-    player.moveSpeed = player.baseMoveSpeed + s.speedBonus;
+    player.moveSpeed = player.baseMoveSpeed + s.speedBonus * mod;
     ui.showToast('Рывок!', 1);
   }
   player.mana -= s.manaCost;
@@ -211,25 +171,23 @@ function castAbility(key) {
 }
 
 function aiCastNova(hero) {
-  const lvl = hero.abilityLevels.W;
-  if (lvl < 1) return;
-  const s = abilityStat('W', lvl);
-  if (hero.mana < s.manaCost) return;
+  const lvl = hero.abilityLevels.W; if (lvl < 1) return;
+  const s = abilityStat('W', lvl); if (hero.mana < s.manaCost) return;
+  const mod = abilityMod(hero, 'W');
   fx.spawnNova(hero, s.radius);
   for (const e of entities) {
-    if (e.alive && e.team !== hero.team && hero.pos.distanceTo(e.pos) <= s.radius) {
-      applyDamage(e, s.damage, hero);
+    if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius) {
+      applyDamage(e, s.damage * mod, hero);
     }
   }
   hero.mana -= s.manaCost; hero.cdW = s.cooldown;
 }
 function aiCastBolt(hero, dir) {
-  const lvl = hero.abilityLevels.Q;
-  if (lvl < 1) return;
-  const s = abilityStat('Q', lvl);
-  if (hero.mana < s.manaCost) return;
+  const lvl = hero.abilityLevels.Q; if (lvl < 1) return;
+  const s = abilityStat('Q', lvl); if (hero.mana < s.manaCost) return;
+  const mod = abilityMod(hero, 'Q');
   hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-  fx.spawnBolt(hero, dir, entities, s.damage);
+  fx.spawnBolt(hero, dir, entities, s.damage * mod);
   hero.mana -= s.manaCost; hero.cdQ = s.cooldown;
 }
 
@@ -262,19 +220,12 @@ function grantXp(hero, amount) {
   if (hero === player) refreshHud();
 }
 
-// Enemy AI: spend skill points by priority and auto-buy items
 function spendEnemySkillPoints(hero) {
   const order = ['Q', 'W', 'Q', 'E', 'Q', 'W', 'Q', 'W', 'E', 'W', 'E', 'E'];
   while (hero.skillPoints > 0) {
     let learned = false;
     for (const key of order) {
-      if (hero.abilityLevels[key] < MAX_ABILITY_LEVEL) {
-        // respect natural progression: don't overspend one ability past availability
-        hero.abilityLevels[key]++;
-        hero.skillPoints--;
-        learned = true;
-        break;
-      }
+      if (hero.abilityLevels[key] < MAX_ABILITY_LEVEL) { hero.abilityLevels[key]++; hero.skillPoints--; learned = true; break; }
     }
     if (!learned) break;
   }
@@ -286,20 +237,19 @@ function enemyAutoBuy(hero) {
   if (!nextId) return;
   const item = ITEMS.find(i => i.id === nextId);
   if (item && hero.gold >= item.cost) {
-    hero.gold -= item.cost;
-    hero.items.push(item.id);
-    applyItemStats(hero, item.stats, 1);
-    hero.aiBuyIndex++;
+    hero.gold -= item.cost; hero.items.push(item.id);
+    applyItemStats(hero, item.stats, 1); hero.aiBuyIndex++;
   }
 }
 
 function onKill(victim, killer) {
   victim.mesh.visible = false;
-  if (victim.kind === 'creep' || victim.kind === 'tower') {
+  if (victim.kind === 'creep' || victim.kind === 'tower' || victim.kind === 'neutral') {
     if (killer && killer.kind === 'hero') {
-      killer.gold += victim.goldBounty;
+      killer.gold += victim.goldBounty || 0;
       grantXp(killer, victim.xpBounty || 60);
       if (killer === player && victim.kind === 'creep') ui.showToast(`+${victim.goldBounty} золота (ластхит)`, 0.9);
+      if (killer === player && victim.kind === 'neutral') ui.showToast(`+${victim.goldBounty} золота (лес)`, 0.9);
       if (victim.kind === 'tower') ui.showToast(killer === player ? 'Башня уничтожена! +300' : 'Наша башня пала', 1.8);
     }
     removeEntity(victim);
@@ -332,28 +282,98 @@ function respawnHero(hero) {
 }
 
 // ---- Creep waves ----
-let waveTimer = 3;
 function spawnWave() {
   for (const team of [TEAM.RADIANT, TEAM.DIRE]) {
     const base = team === 'radiant' ? WORLD.radiantBase : WORLD.direBase;
     for (let i = 0; i < CREEP.perWave; i++) {
-      const c = createCreep(team, base.x + (Math.random() - 0.5) * 6, base.z + (Math.random() - 0.5) * 6);
-      add(c);
+      add(createCreep(team, base.x + (Math.random() - 0.5) * 6, base.z + (Math.random() - 0.5) * 6));
     }
   }
 }
 
-// ---- Game loop ----
-let gameEnded = false;
-let matchTime = 0;
-const clock = new THREE.Clock();
+// ---- Jungle camps ----
+function spawnCamp(camp) {
+  for (let i = 0; i < camp.size; i++) {
+    const ang = (i / camp.size) * Math.PI * 2;
+    const n = createNeutral(camp.x + Math.cos(ang) * 2.6, camp.z + Math.sin(ang) * 2.6);
+    camp.members.push(n); add(n);
+  }
+  camp.respawnTimer = 0;
+}
+
+function updateCamps(dt) {
+  for (const camp of camps) {
+    const cleared = camp.members.length > 0 && camp.members.every(m => !m.alive);
+    if (cleared) {
+      camp.respawnTimer += dt;
+      if (camp.respawnTimer >= NEUTRAL.respawn) { camp.members = []; spawnCamp(camp); }
+    }
+    for (const n of camp.members) if (n.alive) updateNeutral(n, entities, attack);
+  }
+}
+
+// ---- Game lifecycle ----
+function initHero(hero) {
+  hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.buffE = 0;
+  hero.abilityLevels = { Q: 0, W: 0, E: 0 };
+  hero.skillPoints = 1;
+  hero.items = [];
+  hero.aiBuyIndex = 0;
+}
+
+function lanePoint(t) {
+  return {
+    x: WORLD.radiantBase.x + (WORLD.direBase.x - WORLD.radiantBase.x) * t,
+    z: WORLD.radiantBase.z + (WORLD.direBase.z - WORLD.radiantBase.z) * t,
+  };
+}
+
+function startGame(playerDefId) {
+  const playerDef = getHeroDef(playerDefId);
+  const others = HERO_DEFS.filter(h => h.id !== playerDef.id);
+  const enemyDef = others[Math.floor(Math.random() * others.length)];
+
+  add(createBase(TEAM.RADIANT, WORLD.radiantBase.x, WORLD.radiantBase.z));
+  add(createBase(TEAM.DIRE, WORLD.direBase.x, WORLD.direBase.z));
+  const t = [lanePoint(0.18), lanePoint(0.36), lanePoint(0.64), lanePoint(0.82)];
+  add(createTower(TEAM.RADIANT, t[0].x, t[0].z));
+  add(createTower(TEAM.RADIANT, t[1].x, t[1].z));
+  add(createTower(TEAM.DIRE, t[2].x, t[2].z));
+  add(createTower(TEAM.DIRE, t[3].x, t[3].z));
+
+  player = add(createHero(TEAM.RADIANT, playerDef));
+  player.pos.set(WORLD.radiantBase.x + 4, 0, WORLD.radiantBase.z + 4);
+  player.mesh.position.copy(player.pos);
+  initHero(player);
+
+  enemy = add(createHero(TEAM.DIRE, enemyDef));
+  enemy.pos.set(WORLD.direBase.x - 4, 0, WORLD.direBase.z - 4);
+  enemy.mesh.position.copy(enemy.pos);
+  initHero(enemy);
+  enemy.state = 'push';
+  spendEnemySkillPoints(enemy);
+
+  for (const c of CAMPS) { const camp = { ...c, members: [], respawnTimer: 0 }; camps.push(camp); spawnCamp(camp); }
+
+  camera.position.copy(player.pos.clone().add(camOffset));
+  ui.hideHeroSelect();
+  ui.renderShop(ITEMS, player, nearOwnFountain(player));
+  refreshHud();
+  ui.showToast(`Ты — ${playerDef.name} (${playerDef.role}). Враг: ${enemyDef.name}. Уничтожь вражеский трон!`, 5);
+
+  clock.getDelta();
+  started = true;
+}
+
+function updateCamera() {
+  const desired = player.pos.clone().add(camOffset);
+  camera.position.lerp(desired, 0.12);
+  camera.lookAt(player.pos.x, 0, player.pos.z);
+}
 
 function tickCooldowns(hero, dt) {
   for (const k of ['cdQ', 'cdW', 'cdE']) hero[k] = Math.max(0, hero[k] - dt);
-  if (hero.buffE > 0) {
-    hero.buffE -= dt;
-    if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed;
-  }
+  if (hero.buffE > 0) { hero.buffE -= dt; if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; }
 }
 
 function regen(e, dt) {
@@ -363,19 +383,25 @@ function regen(e, dt) {
   if (mpReg) e.mana = Math.min(e.maxMana, e.mana + mpReg * dt);
 }
 
+let idleAngle = 0;
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
-  if (!gameEnded) update(dt);
+  if (started && !gameEnded) update(dt);
   for (const e of entities) {
     if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
     if (e.mesh.scale.y > 1) e.mesh.scale.y = Math.max(1, e.mesh.scale.y - dt * 0.6);
+    if (e.mesh.userData.gem) e.mesh.userData.gem.rotation.y += dt * 2;
   }
-  updateCamera();
+  if (started) updateCamera();
+  else {
+    idleAngle += dt * 0.15;
+    camera.position.set(Math.sin(idleAngle) * 80, 90, Math.cos(idleAngle) * 80);
+    camera.lookAt(0, 0, 0);
+  }
   renderer.render(scene, camera);
 }
 
-let hudTimer = 0;
 function update(dt) {
   matchTime += dt;
   ui.updateTimer(matchTime);
@@ -385,19 +411,14 @@ function update(dt) {
 
   for (const e of entities) if (e.attackCd > 0) e.attackCd -= dt;
 
-  // Player
   if (player.alive) {
-    tickCooldowns(player, dt);
-    regen(player, dt);
+    tickCooldowns(player, dt); regen(player, dt);
     if (player.attackTarget && player.attackTarget.alive) {
       const d = player.distanceTo(player.attackTarget);
       if (d <= player.attackRange) {
-        player.mesh.rotation.y = Math.atan2(
-          player.attackTarget.pos.x - player.pos.x, player.attackTarget.pos.z - player.pos.z);
+        player.mesh.rotation.y = Math.atan2(player.attackTarget.pos.x - player.pos.x, player.attackTarget.pos.z - player.pos.z);
         attack(player, player.attackTarget);
-      } else {
-        moveToward(player, player.attackTarget.pos, dt, player.attackRange * 0.85);
-      }
+      } else { moveToward(player, player.attackTarget.pos, dt, player.attackRange * 0.85); }
     } else if (player.target) {
       if (moveToward(player, player.target, dt, 0.6)) player.target = null;
     }
@@ -407,11 +428,8 @@ function update(dt) {
     if (player.respawnTimer <= 0) respawnHero(player);
   }
 
-  // Enemy
   if (enemy.alive) {
-    tickCooldowns(enemy, dt);
-    regen(enemy, dt);
-    enemyAutoBuy(enemy);
+    tickCooldowns(enemy, dt); regen(enemy, dt); enemyAutoBuy(enemy);
     updateEnemyHero(enemy, { entities, player }, dt, attack, aiCastNova, aiCastBolt);
     enemy.mesh.position.copy(enemy.pos);
   } else {
@@ -419,20 +437,15 @@ function update(dt) {
     if (enemy.respawnTimer <= 0) respawnHero(enemy);
   }
 
-  // Creeps & towers
   for (const e of entities) {
     if (!e.alive) continue;
-    if (e.kind === 'creep') {
-      updateCreep(e, entities, dt, attack);
-      e.mesh.position.copy(e.pos);
-    } else if (e.kind === 'tower') {
-      updateTower(e, entities, dt, attack);
-    }
+    if (e.kind === 'creep') { updateCreep(e, entities, dt, attack); e.mesh.position.copy(e.pos); }
+    else if (e.kind === 'tower') { updateTower(e, entities, dt, attack); }
   }
 
+  updateCamps(dt);
   fx.update(dt, entities, applyDamage);
 
-  // UI (throttle heavy HUD updates a bit)
   hudTimer -= dt;
   ui.updateHero(player);
   ui.updateAbilities(player);
@@ -454,8 +467,5 @@ function endGame(playerWon) {
 
 document.getElementById('restart')?.addEventListener('click', () => location.reload());
 
-ui.renderShop(ITEMS, player, nearOwnFountain(player));
-ui.updateInventory(player);
-ui.updateAbilities(player);
-ui.showToast('ЛКМ/ПКМ — идти/атаковать. Q/W/E — способности, 1/2/3 (или Shift) — прокачать. B — магазин.', 5);
+ui.showHeroSelect(HERO_DEFS, (id) => startGame(id));
 animate();

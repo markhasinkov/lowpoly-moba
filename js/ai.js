@@ -2,20 +2,29 @@ import * as THREE from 'three';
 import { WORLD } from './config.js';
 
 // Find nearest living enemy within range from a list
-export function nearestEnemy(self, entities, range) {
+export function nearestEnemy(self, entities, range, skipNeutral = false) {
   let best = null, bestD = Infinity;
   for (const e of entities) {
     if (!e.alive || e.team === self.team) continue;
+    if (skipNeutral && e.team === 'neutral') continue;
     const d = self.pos.distanceTo(e.pos);
     if (d <= range && d < bestD) { bestD = d; best = e; }
   }
   return best;
 }
 
-// Priority target for creeps/towers: heroes < creeps unless creep closer (simple aggro)
+// Priority target for creeps/towers: nearest enemy in range, ignoring jungle neutrals
 export function pickAttackTarget(self, entities, range) {
-  // Towers prioritise creeps then heroes; keep it simple: nearest enemy in range
-  return nearestEnemy(self, entities, range);
+  return nearestEnemy(self, entities, range, true);
+}
+
+// Neutral camp creep: stationary, strikes anything (radiant or dire) in range
+export function updateNeutral(neutral, entities, attack) {
+  const foe = nearestEnemy(neutral, entities, neutral.attackRange);
+  if (foe) {
+    neutral.mesh.rotation.y = Math.atan2(foe.pos.x - neutral.pos.x, foe.pos.z - neutral.pos.z);
+    attack(neutral, foe);
+  }
 }
 
 // Move entity toward a point, returns true if arrived within stopDist
@@ -79,7 +88,7 @@ export function updateEnemyHero(hero, ctx, dt, attack, castNova, castBolt) {
 
   // Find best target: enemy hero in range, else nearest enemy creep/tower
   const player = ctx.player;
-  const targets = entities.filter(e => e.alive && e.team !== hero.team);
+  const targets = entities.filter(e => e.alive && e.team !== hero.team && e.team !== 'neutral');
 
   // Cast abilities opportunistically
   if (player && player.alive) {

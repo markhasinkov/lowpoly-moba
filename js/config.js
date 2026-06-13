@@ -27,18 +27,48 @@ export const WORLD = {
   fountainRadius: 16, // shop + fast heal zone around own base
 };
 
-export const HERO = {
-  radiant: {
-    maxHp: 620, hpRegen: 2.5, maxMana: 300, manaRegen: 3,
-    moveSpeed: 11, attackRange: 9, attackDamage: 52, attackSpeed: 1.0,
-    armor: 4, name: 'Azure',
+// Selectable heroes. Team color stays Radiant/Dire; `accent` distinguishes the model.
+export const HERO_DEFS = [
+  {
+    id: 'guardian', name: 'Guardian', role: 'Танк', accent: 0x8fe0ff,
+    desc: 'Живучий боец: много HP и брони, мощная Nova.',
+    maxHp: 780, hpRegen: 3.2, maxMana: 260, manaRegen: 2.5,
+    moveSpeed: 10.5, attackRange: 7, attackDamage: 48, attackSpeed: 0.95, armor: 6,
+    abilityMods: { Q: 0.9, W: 1.35, E: 0.9 },
   },
-  dire: {
-    maxHp: 600, hpRegen: 2.2, maxMana: 280, manaRegen: 2.5,
-    moveSpeed: 10.5, attackRange: 8.5, attackDamage: 50, attackSpeed: 1.05,
-    armor: 3, name: 'Crimson',
+  {
+    id: 'mage', name: 'Arcanist', role: 'Маг', accent: 0xc08bff,
+    desc: 'Стеклянная пушка: огромный урон Bolt и запас маны.',
+    maxHp: 540, hpRegen: 2.0, maxMana: 440, manaRegen: 4.5,
+    moveSpeed: 10.5, attackRange: 11, attackDamage: 44, attackSpeed: 0.9, armor: 3,
+    abilityMods: { Q: 1.45, W: 1.15, E: 0.9 },
   },
+  {
+    id: 'assassin', name: 'Stalker', role: 'Убийца', accent: 0xffd24f,
+    desc: 'Быстрый, бьёт часто, сильный рывок Surge.',
+    maxHp: 600, hpRegen: 2.5, maxMana: 300, manaRegen: 3.0,
+    moveSpeed: 12, attackRange: 8, attackDamage: 56, attackSpeed: 1.15, armor: 4,
+    abilityMods: { Q: 1.0, W: 0.9, E: 1.45 },
+  },
+];
+
+export function getHeroDef(id) {
+  return HERO_DEFS.find(h => h.id === id) || HERO_DEFS[0];
+}
+
+// Neutral jungle creeps (stationary camps that respawn)
+export const NEUTRAL = {
+  maxHp: 280, attackDamage: 22, attackRange: 7, attackSpeed: 1.0,
+  armor: 3, goldBounty: 55, xpBounty: 70, respawn: 35,
 };
+
+// Camp anchor points (off-lane). Lane runs top-left to bottom-right.
+export const CAMPS = [
+  { x: 26, z: 26, size: 3 },
+  { x: -26, z: -26, size: 3 },
+  { x: 6, z: -30, size: 2 },
+  { x: -6, z: 30, size: 2 },
+];
 
 export const CREEP = {
   maxHp: 160, attackDamage: 16, attackRange: 6, attackSpeed: 1.0,

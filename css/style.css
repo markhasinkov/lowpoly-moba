@@ -200,3 +200,48 @@ canvas { display: block; }
 .si-desc { font-size: 11px; color: #a9d0ba; }
 .si-cost { font-weight: 800; font-size: 13px; color: #ffd24f; white-space: nowrap; }
 .si-cost.no { color: #ff7a7a; }
+
+/* Hero selection */
+#hero-select {
+  position: fixed; inset: 0; z-index: 40; display: none;
+  align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 35%, rgba(20,45,34,.82), rgba(6,16,12,.94));
+  backdrop-filter: blur(3px);
+}
+.hs-inner { text-align: center; max-width: 980px; padding: 20px; }
+.hs-inner h1 {
+  font-size: 46px; letter-spacing: 1px;
+  background: linear-gradient(90deg, #7fe0a8, #ffd24f); -webkit-background-clip: text;
+  background-clip: text; color: transparent;
+}
+.hs-sub { font-size: 16px; color: #b8e6cc; margin: 6px 0 26px; }
+#hero-cards { display: flex; gap: 18px; justify-content: center; flex-wrap: wrap; }
+.hero-card {
+  width: 240px; padding: 20px 18px; border-radius: 16px; cursor: pointer;
+  background: linear-gradient(165deg, rgba(28,52,40,.92), rgba(12,22,17,.92));
+  border: 2px solid rgba(255,255,255,.12); transition: transform .14s, border-color .14s, box-shadow .14s;
+}
+.hero-card:hover {
+  transform: translateY(-6px);
+  border-color: var(--accent);
+  box-shadow: 0 12px 30px rgba(0,0,0,.5), 0 0 22px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.hc-gem {
+  width: 54px; height: 54px; margin: 0 auto 12px; transform: rotate(45deg);
+  background: var(--accent); border-radius: 10px;
+  box-shadow: 0 0 24px var(--accent); animation: gemPulse 2.2s ease-in-out infinite;
+}
+@keyframes gemPulse { 0%,100% { opacity:.75; } 50% { opacity:1; } }
+.hc-name { font-size: 22px; font-weight: 800; }
+.hc-role { font-size: 13px; font-weight: 700; color: var(--accent); margin-bottom: 10px; }
+.hc-desc { font-size: 13px; color: #b8e6cc; min-height: 54px; line-height: 1.45; }
+.hc-stats {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px;
+  font-size: 13px; margin: 10px 0 14px; color: #dfeee6;
+}
+.hc-pick {
+  width: 100%; padding: 10px; border: none; border-radius: 10px; cursor: pointer;
+  font-weight: 800; font-size: 15px; color: #06160e;
+  background: linear-gradient(90deg, #4fd089, #7fe0a8);
+}
+.hero-card:hover .hc-pick { filter: brightness(1.08); }

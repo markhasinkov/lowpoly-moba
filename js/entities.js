@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TEAM, COLORS, HERO, CREEP, TOWER, BASE } from './config.js';
+import { TEAM, COLORS, CREEP, TOWER, BASE, NEUTRAL } from './config.js';
 
 function mat(color, flat = true) {
   return new THREE.MeshStandardMaterial({ color, flatShading: flat, roughness: 0.85, metalness: 0.1 });
@@ -59,9 +59,9 @@ export class Entity {
   }
 }
 
-export function createHero(team) {
-  const stats = HERO[team];
+export function createHero(team, def) {
   const color = COLORS[team];
+  const accent = def.accent;
   const g = new THREE.Group();
 
   const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.1, 2.2, 7), mat(color));
@@ -70,32 +70,60 @@ export function createHero(team) {
   const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8, 0), mat(0xf0d6b0));
   head.position.y = 3.6; head.castShadow = true; g.add(head);
 
-  // shoulders / cape accent
+  // shoulders / cape accent (team-tinted)
   const cape = new THREE.Mesh(new THREE.ConeGeometry(1.3, 2.4, 5), mat(color === COLORS.radiant ? 0x1f6fbf : 0xb02b2b));
   cape.position.set(0, 2.0, -0.7); cape.castShadow = true; g.add(cape);
 
-  // weapon
-  const weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 3, 5), mat(0xcfcfcf));
+  // hero-specific accent gem floating above (distinguishes the 3 heroes)
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0),
+    new THREE.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: 0.7, flatShading: true }));
+  gem.position.y = 4.9; g.add(gem);
+  g.userData.gem = gem;
+
+  // weapon — longer for casters, blade for the rest
+  const weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, def.id === 'mage' ? 3.6 : 3, 5), mat(0xcfcfcf));
   weapon.position.set(1.1, 2.4, 0.2); weapon.rotation.z = Math.PI / 7; g.add(weapon);
 
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.2, 16),
+  const ring = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.4, 0.2, 16),
     new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35 }));
-  base.position.y = 0.11; g.add(base);
+  ring.position.y = 0.11; g.add(ring);
 
   const bar = makeBar(4);
-  bar.position.y = 5.0; g.add(bar);
+  bar.position.y = 5.6; g.add(bar);
 
   return new Entity({
     kind: 'hero', team, mesh: g, hpBar: bar,
-    hp: stats.maxHp, maxHp: stats.maxHp,
-    mana: stats.maxMana, maxMana: stats.maxMana,
-    moveSpeed: stats.moveSpeed, baseMoveSpeed: stats.moveSpeed,
-    attackRange: stats.attackRange, attackDamage: stats.attackDamage,
-    attackSpeed: stats.attackSpeed, armor: stats.armor,
-    hpRegen: stats.hpRegen, manaRegen: stats.manaRegen,
-    name: stats.name, level: 1, xp: 0, gold: 600, kills: 0, deaths: 0,
+    hp: def.maxHp, maxHp: def.maxHp,
+    mana: def.maxMana, maxMana: def.maxMana,
+    moveSpeed: def.moveSpeed, baseMoveSpeed: def.moveSpeed,
+    attackRange: def.attackRange, attackDamage: def.attackDamage,
+    attackSpeed: def.attackSpeed, armor: def.armor,
+    hpRegen: def.hpRegen, manaRegen: def.manaRegen,
+    name: def.name, role: def.role, defId: def.id,
+    abilityMods: def.abilityMods,
+    level: 1, xp: 0, gold: 600, kills: 0, deaths: 0,
     respawnTimer: 0, radius: 1.4,
     x: 0, z: 0,
+  });
+}
+
+export function createNeutral(x, z) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.DodecahedronGeometry(1.0, 0), mat(0x9c7a3c));
+  body.position.y = 1.1; body.castShadow = true; g.add(body);
+  const spike = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.4, 5), mat(0x6f5527));
+  spike.position.y = 2.4; spike.castShadow = true; g.add(spike);
+  const bar = makeBar(2.4);
+  bar.position.y = 3.2; g.add(bar);
+
+  return new Entity({
+    kind: 'neutral', team: 'neutral', mesh: g, hpBar: bar,
+    hp: NEUTRAL.maxHp, maxHp: NEUTRAL.maxHp,
+    moveSpeed: 0, baseMoveSpeed: 0,
+    attackRange: NEUTRAL.attackRange, attackDamage: NEUTRAL.attackDamage,
+    attackSpeed: NEUTRAL.attackSpeed, armor: NEUTRAL.armor,
+    goldBounty: NEUTRAL.goldBounty, xpBounty: NEUTRAL.xpBounty,
+    radius: 1.0, x, z,
   });
 }
 
