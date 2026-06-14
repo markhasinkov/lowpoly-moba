@@ -1,250 +1,169 @@
-import { scaleAbility, ITEMS, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL } from './config.js';
+import { scaleAbility, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, xpForLevel, SLOTS, SLOT_NAMES } from './config.js';
+import { statLines } from './loot.js';
+
+const CAST_KEY = { Q: '1', W: '2', E: '3', R: '4' };
 
 export class UI {
   constructor() {
-    this.gold = document.getElementById('gold');
-    this.lvl = document.getElementById('level');
-    this.kda = document.getElementById('kda');
     this.hpFill = document.getElementById('hp-fill');
     this.hpText = document.getElementById('hp-text');
     this.manaFill = document.getElementById('mana-fill');
     this.manaText = document.getElementById('mana-text');
     this.xpFill = document.getElementById('xp-fill');
-    this.timer = document.getElementById('match-timer');
+    this.levelEl = document.getElementById('level');
+    this.goldEl = document.getElementById('gold');
+    this.depthEl = document.getElementById('depth');
+    this.spEl = document.getElementById('skillpoints');
     this.toast = document.getElementById('toast');
-    this.gameover = document.getElementById('gameover');
-    this.skillPointsEl = document.getElementById('skillpoints');
-    this.inventoryEl = document.getElementById('inventory');
-    this.shopEl = document.getElementById('shop');
-    this.shopGrid = document.getElementById('shop-grid');
-    this.shopHint = document.getElementById('shop-hint');
-    this.abilityEls = {
-      Q: document.getElementById('ab-Q'),
-      W: document.getElementById('ab-W'),
-      E: document.getElementById('ab-E'),
-      R: document.getElementById('ab-R'),
-    };
-    this.heroSelect = document.getElementById('hero-select');
-    this.heroCards = document.getElementById('hero-cards');
-    this.minimap = document.getElementById('minimap');
-    this.mmCtx = this.minimap.getContext('2d');
+    this.classSelect = document.getElementById('class-select');
+    this.classCards = document.getElementById('class-cards');
+    this.bossBar = document.getElementById('boss-bar');
+    this.bossName = document.getElementById('boss-name');
+    this.bossHp = document.getElementById('boss-hp-fill');
+    this.invPanel = document.getElementById('inventory-panel');
+    this.equipGrid = document.getElementById('equip-grid');
+    this.invGrid = document.getElementById('inv-grid');
+    this.charStats = document.getElementById('char-stats');
+    this.abilityEls = { Q: document.getElementById('ab-Q'), W: document.getElementById('ab-W'), E: document.getElementById('ab-E'), R: document.getElementById('ab-R') };
     this._toastT = 0;
-    this.shopOpen = false;
-    this.callbacks = { onBuy: () => {}, onLevel: () => {} };
-
-    // ability level-up buttons
+    this._invOpen = false;
+    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {} };
     for (const k of ['Q', 'W', 'E', 'R']) {
-      const btn = this.abilityEls[k].querySelector('.levelup');
-      if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevel(k); });
+      const btn = this.abilityEls[k] && this.abilityEls[k].querySelector('.levelup');
+      if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevelAbility(k); });
     }
-    document.getElementById('shop-toggle')?.addEventListener('click', () => this.toggleShop());
-    document.getElementById('shop-close')?.addEventListener('click', () => this.toggleShop());
   }
 
-  toggleShop() {
-    this.shopOpen = !this.shopOpen;
-    this.shopEl.style.display = this.shopOpen ? 'block' : 'none';
-  }
-
-  showHeroSelect(defs, onPick) {
-    if (!this.heroCards) return;
-    const roleColor = { 'Танк': '#8fe0ff', 'Маг': '#c08bff', 'Убийца': '#ffd24f' };
+  showClassSelect(defs, onPick) {
+    if (!this.classCards) return;
+    const colors = { Warrior: '#8fe0ff', Mage: '#c08bff', Rogue: '#ffd24f' };
     let html = '';
     for (const d of defs) {
-      const c = roleColor[d.role] || '#7fe0a8';
+      const c = colors[d.role] || '#7fe0a8';
       html += `<div class="hero-card" data-id="${d.id}" style="--accent:${c}">
-        <div class="hc-gem"></div>
-        <div class="hc-name">${d.name}</div>
-        <div class="hc-role">${d.role}</div>
+        <div class="hc-name">${d.name}</div><div class="hc-role">${d.role}</div>
         <div class="hc-desc">${d.desc}</div>
-        <div class="hc-stats">
-          <span>❤️ ${d.maxHp}</span><span>🗡️ ${d.attackDamage}</span>
-          <span>🛡️ ${d.armor}</span><span>👟 ${d.moveSpeed}</span>
-        </div>
-        <button class="hc-pick">Играть</button>
-      </div>`;
+        <div class="hc-stats"><span>❤️ ${d.maxHp}</span><span>🗡️ ${d.attackDamage}</span><span>🛡️ ${d.armor}</span></div>
+        <button class="hc-pick">Играть</button></div>`;
     }
-    this.heroCards.innerHTML = html;
-    this.heroCards.querySelectorAll('.hero-card').forEach(el => {
-      el.addEventListener('click', () => onPick(el.dataset.id));
-    });
-    this.heroSelect.style.display = 'flex';
+    this.classCards.innerHTML = html;
+    this.classCards.querySelectorAll('.hero-card').forEach(el => el.addEventListener('click', () => onPick(el.dataset.id)));
+    this.classSelect.style.display = 'flex';
   }
+  hideClassSelect() { if (this.classSelect) this.classSelect.style.display = 'none'; }
 
-  hideHeroSelect() {
-    if (this.heroSelect) this.heroSelect.style.display = 'none';
-  }
-
-  showToast(msg, dur = 2.2) {
+  showToast(msg, dur = 2.0, color) {
+    if (!this.toast) return;
     this.toast.textContent = msg;
+    this.toast.style.color = color || '#eaf2ff';
     this.toast.classList.add('show');
     this._toastT = dur;
   }
+  updateToast(dt) { if (this._toastT > 0) { this._toastT -= dt; if (this._toastT <= 0) this.toast.classList.remove('show'); } }
 
-  updateToast(dt) {
-    if (this._toastT > 0) {
-      this._toastT -= dt;
-      if (this._toastT <= 0) this.toast.classList.remove('show');
-    }
+  updateHud(p, depth) {
+    if (!p) return;
+    this.hpFill.style.width = Math.max(0, p.hp / p.maxHp * 100) + '%';
+    this.hpText.textContent = `${Math.ceil(p.hp)} / ${Math.round(p.maxHp)}`;
+    this.manaFill.style.width = Math.max(0, p.mana / p.maxMana * 100) + '%';
+    this.manaText.textContent = `${Math.ceil(p.mana)} / ${Math.round(p.maxMana)}`;
+    const need = xpForLevel(p.level);
+    this.xpFill.style.width = Math.min(100, p.xp / need * 100) + '%';
+    this.levelEl.textContent = p.level;
+    this.goldEl.textContent = Math.floor(p.gold);
+    if (this.depthEl) this.depthEl.textContent = depth;
+    if (this.spEl) { this.spEl.textContent = p.skillPoints; this.spEl.parentElement.style.visibility = p.skillPoints > 0 ? 'visible' : 'hidden'; }
   }
 
-  updateHero(hero) {
-    if (!hero) return;
-    const hpr = Math.max(0, hero.hp / hero.maxHp);
-    this.hpFill.style.width = (hpr * 100) + '%';
-    this.hpText.textContent = `${Math.ceil(hero.hp)} / ${Math.round(hero.maxHp)}`;
-    const mpr = Math.max(0, hero.mana / hero.maxMana);
-    this.manaFill.style.width = (mpr * 100) + '%';
-    this.manaText.textContent = `${Math.ceil(hero.mana)} / ${Math.round(hero.maxMana)}`;
-    this.gold.textContent = Math.floor(hero.gold);
-    this.lvl.textContent = hero.level;
-    this.kda.textContent = `${hero.kills} / ${hero.deaths}`;
-    this.xpFill.style.width = ((hero.xp % 220) / 220 * 100) + '%';
-    if (this.skillPointsEl) {
-      this.skillPointsEl.textContent = hero.skillPoints;
-      this.skillPointsEl.parentElement.style.visibility = hero.skillPoints > 0 ? 'visible' : 'hidden';
-    }
-  }
-
-  updateAbilities(hero) {
-    if (!hero.abilities) return;
+  updateAbilities(p) {
+    if (!p.abilities) return;
     for (const k of ['Q', 'W', 'E', 'R']) {
-      const el = this.abilityEls[k];
-      const ab = hero.abilities[k];
-      const lvl = hero.abilityLevels ? hero.abilityLevels[k] : 0;
-      const cd = hero['cd' + k] || 0;
-      const cover = el.querySelector('.cd-cover');
-      const label = el.querySelector('.cd-label');
-      const nameEl = el.querySelector('.name');
-      if (nameEl) nameEl.textContent = `${ab.icon} ${ab.name}`;
+      const el = this.abilityEls[k]; if (!el) continue;
+      const ab = p.abilities[k];
+      const lvl = p.abilityLevels ? (p.abilityLevels[k] || 0) : 0;
+      const cd = p['cd' + k] || 0;
+      const cover = el.querySelector('.cd-cover'), label = el.querySelector('.cd-label'), nameEl = el.querySelector('.name');
+      if (nameEl) nameEl.textContent = `${ab.icon}`;
       const max = ab.cooldown || 1;
-      if (cd > 0) {
-        cover.style.height = Math.min(100, (cd / max) * 100) + '%';
-        label.textContent = cd.toFixed(1);
-        el.classList.add('on-cd');
-      } else {
-        cover.style.height = '0%';
-        label.textContent = '';
-        el.classList.remove('on-cd');
-      }
+      if (cd > 0) { cover.style.height = Math.min(100, cd / max * 100) + '%'; label.textContent = cd.toFixed(1); el.classList.add('on-cd'); }
+      else { cover.style.height = '0%'; label.textContent = ''; el.classList.remove('on-cd'); }
       const pips = el.querySelectorAll('.pip');
-      pips.forEach((p, i) => p.classList.toggle('filled', i < lvl));
-      const btn = el.querySelector('.levelup');
+      pips.forEach((pp, i) => pp.classList.toggle('filled', i < lvl));
       const cap = k === 'R' ? MAX_ULT_LEVEL : MAX_ABILITY_LEVEL;
-      let canLevel = hero.skillPoints > 0 && lvl < cap;
-      if (k === 'R' && canLevel && hero.level < ((ab.ultReq || 6) + lvl * 5)) canLevel = false;
+      let canLevel = p.skillPoints > 0 && lvl < cap;
+      if (k === 'R' && canLevel && p.level < ((ab.ultReq || 6) + lvl * 5)) canLevel = false;
+      const btn = el.querySelector('.levelup');
       if (btn) btn.style.display = canLevel ? 'flex' : 'none';
       el.classList.toggle('learnable', canLevel);
       el.classList.toggle('locked', lvl < 1);
-      el.title = this.abilityTooltip(k, hero, lvl, canLevel);
+      el.title = this._abTip(k, p, lvl);
     }
   }
-
-  abilityTooltip(key, hero, lvl, canLevel) {
-    const ab = hero.abilities[key];
-    const shown = scaleAbility(ab, Math.max(1, lvl));
-    let effect;
-    if (ab.type === 'buff_speed') effect = `Скорость +${Math.round(shown.speedBonus)} на ${ab.duration}с`;
-    else if (ab.type === 'buff_guard') effect = `+${Math.round(shown.armorBonus)} брони, лечение ${Math.round(shown.healPerSec)}/с (${ab.duration}с)`;
-    else if (ab.type === 'blink') effect = `Телепорт на ${ab.range}`;
-    else if (ab.type === 'dash') effect = `Рывок ${ab.range}, урон ${Math.round(shown.damage)} в точке`;
-    else if (ab.type === 'projectile') effect = `Урон ${Math.round(shown.damage)}${ab.slow ? ', замедляет' : ''}`;
-    else effect = `Урон ${Math.round(shown.damage)}, радиус ${Math.round(shown.radius)}`;
-    const head = lvl < 1 ? `${ab.icon} ${ab.name} — НЕ ИЗУЧЕНА` : `${ab.icon} ${ab.name} — ур.${lvl}/${MAX_ABILITY_LEVEL}`;
-    const numKey = key === 'Q' ? '1' : key === 'W' ? '2' : key === 'E' ? '3' : '4';
-    const learn = canLevel ? `\n► Можно прокачать (нажми ${numKey})` : '';
-    return `${head}\n${ab.desc}\n${effect}\nМана: ${ab.manaCost} · Кулдаун: ${ab.cooldown}с${learn}`;
+  _abTip(key, p, lvl) {
+    const ab = p.abilities[key];
+    const s = scaleAbility(ab, Math.max(1, lvl));
+    const head = lvl < 1 ? `${ab.icon} ${ab.name} — НЕ ИЗУЧЕНО` : `${ab.icon} ${ab.name} — ур.${lvl}`;
+    const dmg = s.damage ? `\nУрон ${Math.round(s.damage)}` : '';
+    return `${head} [${CAST_KEY[key]}]\n${ab.desc}${dmg}\nМана ${ab.manaCost} · КД ${ab.cooldown}с`;
   }
-
   flashAbility(key) {
-    const el = this.abilityEls[key];
-    if (!el) return;
-    el.classList.remove('cast');
-    void el.offsetWidth;
-    el.classList.add('cast');
-    setTimeout(() => el.classList.remove('cast'), 360);
+    const el = this.abilityEls[key]; if (!el) return;
+    el.classList.remove('cast'); void el.offsetWidth; el.classList.add('cast');
+    setTimeout(() => el.classList.remove('cast'), 320);
   }
 
-  updateInventory(hero) {
-    if (!this.inventoryEl) return;
-    const slots = this.inventoryEl.querySelectorAll('.slot');
-    slots.forEach((s, i) => {
-      const id = hero.items[i];
-      if (id) {
-        const def = ITEMS.find(d => d.id === id);
-        s.textContent = def ? def.icon : '?';
-        s.title = def ? `${def.name} — ${def.desc}` : '';
-        s.classList.add('filled');
-      } else {
-        s.textContent = '';
-        s.title = '';
-        s.classList.remove('filled');
-      }
-    });
+  updateBossBar(boss) {
+    if (!this.bossBar) return;
+    if (!boss || !boss.alive) { this.bossBar.style.display = 'none'; return; }
+    this.bossBar.style.display = 'block';
+    this.bossName.textContent = boss.name;
+    if (boss.gradeColor) this.bossName.style.color = '#' + boss.gradeColor.toString(16).padStart(6, '0');
+    this.bossHp.style.width = Math.max(0, boss.hp / boss.maxHp * 100) + '%';
   }
 
-  renderShop(items, hero, canShop) {
-    if (!this.shopGrid) return;
-    this.shopHint.textContent = canShop
-      ? 'Ты у фонтана — можно покупать'
-      : 'Подойди к своей базе (синяя зона), чтобы покупать';
-    this.shopHint.style.color = canShop ? '#7fe0a8' : '#ffb37f';
-    let html = '';
-    for (const it of items) {
-      const owned = hero.items.filter(x => x === it.id).length;
-      const afford = hero.gold >= it.cost;
-      const disabled = !afford || !canShop || hero.items.length >= 6;
-      html += `<div class="shop-item ${disabled ? 'disabled' : ''}" data-id="${it.id}">
-        <div class="si-icon">${it.icon}</div>
-        <div class="si-body">
-          <div class="si-name">${it.name}${owned ? ` ×${owned}` : ''}</div>
-          <div class="si-desc">${it.desc}</div>
-        </div>
-        <div class="si-cost ${afford ? '' : 'no'}">💰${it.cost}</div>
-      </div>`;
+  isInventoryOpen() { return this._invOpen; }
+  toggleInventory(p) { this._invOpen = !this._invOpen; this.invPanel.style.display = this._invOpen ? 'flex' : 'none'; if (this._invOpen) this.refreshInventory(p); }
+
+  _itemTip(it) {
+    const lines = statLines(it.stats).join('\n');
+    const affs = it.affixes && it.affixes.length ? '\n' + it.affixes.map(a => a.label).join('\n') : '';
+    return `${it.name} (ур.${it.ilvl})\n${lines}${affs}`;
+  }
+  refreshInventory(p) {
+    if (!this.equipGrid) return;
+    let eq = '';
+    for (const s of SLOTS) {
+      const it = p.equipment[s];
+      eq += `<div class="eq-slot ${it ? 'filled' : ''}" data-slot="${s}" title="${it ? this._itemTip(it) : SLOT_NAMES[s]}" style="${it ? `--rc:${it.color}` : ''}">
+        <span class="eq-label">${SLOT_NAMES[s]}</span><span class="eq-icon">${it ? it.icon : ''}</span></div>`;
     }
-    this.shopGrid.innerHTML = html;
-    this.shopGrid.querySelectorAll('.shop-item').forEach(el => {
-      el.addEventListener('click', () => this.callbacks.onBuy(el.dataset.id));
+    this.equipGrid.innerHTML = eq;
+    this.equipGrid.querySelectorAll('.eq-slot').forEach(el => el.addEventListener('click', () => this.callbacks.onUnequip(el.dataset.slot)));
+
+    let inv = '';
+    p.inventory.forEach((it, i) => {
+      inv += `<div class="inv-slot" data-i="${i}" title="${this._itemTip(it)}" style="--rc:${it.color}"><span>${it.icon}</span></div>`;
     });
-  }
+    this.invGrid.innerHTML = inv;
+    this.invGrid.querySelectorAll('.inv-slot').forEach(el => el.addEventListener('click', () => {
+      const it = p.inventory[parseInt(el.dataset.i, 10)]; if (it) this.callbacks.onEquip(it);
+    }));
 
-  updateTimer(seconds) {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    this.timer.textContent = `${m}:${s.toString().padStart(2, '0')}`;
-  }
-
-  drawMinimap(entities, player, world) {
-    const ctx = this.mmCtx;
-    const W = this.minimap.width, H = this.minimap.height;
-    ctx.clearRect(0, 0, W, H);
-    ctx.fillStyle = '#1c2a1c';
-    ctx.fillRect(0, 0, W, H);
-    const half = world.size * 0.75;
-    const toPx = (x, z) => [((x + half) / (2 * half)) * W, ((z + half) / (2 * half)) * H];
-    ctx.strokeStyle = '#c8a96a'; ctx.lineWidth = 3;
-    ctx.beginPath();
-    const [ax, az] = toPx(world.radiantBase.x, world.radiantBase.z);
-    const [bx, bz] = toPx(world.direBase.x, world.direBase.z);
-    ctx.moveTo(ax, az); ctx.lineTo(bx, bz); ctx.stroke();
-    for (const e of entities) {
-      if (!e.alive) continue;
-      const [px, py] = toPx(e.pos.x, e.pos.z);
-      let r = 2;
-      const color = e.team === 'radiant' ? '#3aa6ff' : '#ff4d4d';
-      if (e.kind === 'hero') r = 4;
-      if (e.kind === 'tower') r = 3;
-      if (e.kind === 'base') r = 5;
-      ctx.fillStyle = color;
-      ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI * 2); ctx.fill();
-      if (e === player) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    if (this.charStats) {
+      this.charStats.innerHTML = [
+        `❤️ HP ${Math.round(p.maxHp)}`, `🔵 Мана ${Math.round(p.maxMana)}`,
+        `🗡️ Урон ${Math.round(p.attackDamage)}`, `🛡️ Броня ${p.armor.toFixed(1)}`,
+        `⚡ Скор.атаки ${p.attackSpeed.toFixed(2)}`, `👟 Скорость ${p.baseMoveSpeed.toFixed(1)}`,
+        `💥 Крит ${Math.round((p.critChance || 0) * 100)}%`, `🩸 Вампиризм ${Math.round((p.lifesteal || 0) * 100)}%`,
+        `⏱️ КД −${Math.round((p.cdr || 0) * 100)}%`, `✨ Урон умений +${Math.round((p.spellAmp || 0) * 100)}%`,
+      ].map(s => `<span>${s}</span>`).join('');
     }
   }
 
   showGameOver(win) {
-    this.gameover.style.display = 'flex';
-    this.gameover.querySelector('h1').textContent = win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ';
-    this.gameover.querySelector('h1').style.color = win ? '#66dd77' : '#ff5555';
+    const go = document.getElementById('gameover');
+    if (!go) return;
+    go.style.display = 'flex';
+    go.querySelector('h1').textContent = win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ';
   }
 }

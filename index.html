@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Low-Poly MOBA — Sauna</title>
+  <title>Low-Poly ARPG — Sauna</title>
   <link rel="stylesheet" href="css/style.css" />
   <script type="importmap">
   {
@@ -16,22 +16,19 @@
 </head>
 <body>
   <div id="game"></div>
-  <div id="vignette"></div>
-  <div id="fx-layer"></div>
   <div id="fx-layer"></div>
 
   <!-- Top bar -->
   <div id="topbar">
-    <div class="stat"><span class="label">⏱</span><span id="match-timer">0:00</span></div>
+    <div class="stat"><span class="label">УР</span><span id="level">1</span></div>
     <div class="stat"><span class="label">💰</span><span id="gold">0</span></div>
-    <div class="stat"><span class="label">LVL</span><span id="level">1</span></div>
-    <div class="stat"><span class="label">K/D</span><span id="kda">0 / 0</span></div>
-    <button id="shop-toggle">🛒 Магазин <span class="hotkey">B</span></button>
+    <div class="stat"><span class="label">Глубина</span><span id="depth">1</span></div>
   </div>
 
-  <!-- Minimap -->
-  <div id="minimap-wrap">
-    <canvas id="minimap" width="190" height="190"></canvas>
+  <!-- Boss bar -->
+  <div id="boss-bar">
+    <div id="boss-name">Boss</div>
+    <div class="boss-hp"><div id="boss-hp-fill"></div></div>
   </div>
 
   <!-- Bottom HUD -->
@@ -41,80 +38,67 @@
       <div class="bar mana"><div id="mana-fill" class="fill"></div><span id="mana-text" class="bar-text">0 / 0</span></div>
       <div class="bar xp"><div id="xp-fill" class="fill"></div></div>
     </div>
-
-    <div id="hud-center">
-      <div id="abilities">
-        <div class="ability locked" id="ab-Q">
-          <div class="key">Q</div><div class="name">Bolt</div>
-          <div class="cd-cover"></div><div class="cd-label"></div>
-          <div class="levelup">+</div>
-          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
-        </div>
-        <div class="ability locked" id="ab-W">
-          <div class="key">W</div><div class="name">Nova</div>
-          <div class="cd-cover"></div><div class="cd-label"></div>
-          <div class="levelup">+</div>
-          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
-        </div>
-        <div class="ability locked" id="ab-E">
-          <div class="key">E</div><div class="name">Surge</div>
-          <div class="cd-cover"></div><div class="cd-label"></div>
-          <div class="levelup">+</div>
-          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
-        </div>
-        <div class="ability locked" id="ab-R">
-          <div class="key">R</div><div class="name">Ult</div>
-          <div class="cd-cover"></div><div class="cd-label"></div>
-          <div class="levelup">+</div>
-          <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
-        </div>
+    <div id="abilities">
+      <div class="ability locked" id="ab-Q">
+        <div class="key">1</div><div class="name"></div>
+        <div class="cd-cover"></div><div class="cd-label"></div><div class="levelup">+</div>
+        <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
       </div>
-      <div id="skillpoints-wrap"><span class="label">Очки умений:</span> <span id="skillpoints">0</span> <span class="hint">(1/2/3/4 или Shift)</span></div>
+      <div class="ability locked" id="ab-W">
+        <div class="key">2</div><div class="name"></div>
+        <div class="cd-cover"></div><div class="cd-label"></div><div class="levelup">+</div>
+        <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+      </div>
+      <div class="ability locked" id="ab-E">
+        <div class="key">3</div><div class="name"></div>
+        <div class="cd-cover"></div><div class="cd-label"></div><div class="levelup">+</div>
+        <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+      </div>
+      <div class="ability locked" id="ab-R">
+        <div class="key">4</div><div class="name"></div>
+        <div class="cd-cover"></div><div class="cd-label"></div><div class="levelup">+</div>
+        <div class="pips"><span class="pip"></span><span class="pip"></span><span class="pip"></span></div>
+      </div>
     </div>
-
-    <div id="inventory">
-      <div class="slot"></div><div class="slot"></div><div class="slot"></div>
-      <div class="slot"></div><div class="slot"></div><div class="slot"></div>
-    </div>
+    <div id="skillpoints-wrap"><span class="label">Очки умений:</span> <span id="skillpoints">0</span> <span class="hint">(Shift+1..4)</span></div>
   </div>
 
-  <!-- Shop -->
-  <div id="shop">
-    <div class="shop-head">
-      <h2>🛒 Магазин артефактов</h2>
-      <button id="shop-close">✕</button>
+  <!-- Inventory / equipment panel -->
+  <div id="inventory-panel">
+    <div class="inv-col">
+      <h3>Экипировка</h3>
+      <div id="equip-grid"></div>
+      <h3>Характеристики</h3>
+      <div id="char-stats"></div>
     </div>
-    <div id="shop-hint"></div>
-    <div id="shop-grid"></div>
+    <div class="inv-col">
+      <h3>Инвентарь <span class="hint">(клик — надеть)</span></h3>
+      <div id="inv-grid"></div>
+    </div>
+    <div class="inv-hint">I — закрыть</div>
   </div>
 
   <div id="toast"></div>
 
   <div id="gameover">
-    <div class="panel">
-      <h1>ПОБЕДА!</h1>
-      <button id="restart">Играть снова</button>
-    </div>
+    <div class="panel"><h1>ПОБЕДА!</h1><button id="restart">Заново</button></div>
   </div>
 
   <div id="help">
     <strong>Управление</strong><br/>
-    ПКМ / ЛКМ — идти / атаковать<br/>
-    <b>Сначала</b> нажми 1/2/3 — изучить Q/W/E<br/>
-    Затем Q W E — применить (по курсору)<br/>
-    Наведи на иконку — описание скилла<br/>
-    B — магазин · S — стоп
+    WASD — движение · Q/E — поворот камеры<br/>
+    ЛКМ — атака · 1/2/3/4 — умения<br/>
+    Shift+1..4 — прокачать умение · I — инвентарь<br/>
+    Зачисти мобов и босса → войди в портал
   </div>
 
-  <!-- Loading overlay -->
-  <div id="loading"><div class="ld-inner"><div class="ld-spinner"></div><div id="loading-text">Загрузка моделей…</div></div></div>
+  <div id="loading"><div class="ld-inner"><div class="ld-spinner"></div><div id="loading-text">Загрузка…</div></div></div>
 
-  <!-- Hero selection -->
-  <div id="hero-select">
+  <div id="class-select">
     <div class="hs-inner">
-      <h1>Low-Poly MOBA</h1>
-      <p class="hs-sub">Выбери героя</p>
-      <div id="hero-cards"></div>
+      <h1>Low-Poly ARPG</h1>
+      <p class="hs-sub">Выбери класс</p>
+      <div id="class-cards"></div>
     </div>
   </div>
 

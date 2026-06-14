@@ -2,7 +2,7 @@ import * as THREE from 'three';
 // Abilities are defined per-hero in config; this module only renders visuals.
 
 const RAD = 0x66ccff, DIRE = 0xff7755;
-function teamColor(t) { return t === 'radiant' ? RAD : DIRE; }
+function teamColor(t) { return (t === 'enemy' || t === 'dire') ? DIRE : RAD; }
 
 // ---- small effect factories (each returns { tick(dt)->done, dispose() }) ----
 function growFade(scene, mesh, dur, maxScale, startScale = 0.1, startOpacity = 0.95) {

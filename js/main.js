@@ -1,582 +1,435 @@
 import * as THREE from 'three';
 import { createScene, populateScatter } from './scene.js';
-import {
-  createHero, createCreep, createTower, createBase, createNeutral, animateEntityVisual, playHeroAnim,
-} from './entities.js';
+import { createHero, createMob, animateEntityVisual, playHeroAnim } from './entities.js';
 import { EffectSystem } from './abilities.js';
-import {
-  updateCreep, updateTower, updateEnemyHero, updateNeutral, moveToward, nearestEnemy,
-} from './ai.js';
+import { updateMob, moveToward } from './ai.js';
 import { UI } from './ui.js';
 import { preloadHeroes, preloadNature, heroAssets } from './assets.js';
 import {
-  TEAM, WORLD, CREEP, scaleAbility, ITEMS, AI_BUILD_ORDER,
-  HERO_DEFS, getHeroDef, NEUTRAL, CAMPS,
-  XP_PER_LEVEL, HERO_RESPAWN, MAX_LEVEL, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, MAX_ITEMS,
+  HERO_DEFS, getHeroDef, WORLD, scaleAbility, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, MAX_LEVEL,
+  HERO_RESPAWN, xpForLevel, MOB_TYPES, MOB_GRADES, bossForDepth, DUNGEON, GRADE_COLOR,
 } from './config.js';
+import { generateItem, rollDrop, rarityById } from './loot.js';
+import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
 
 const { scene, renderer, camera } = createScene();
 const ui = new UI();
 const fx = new EffectSystem(scene);
 
-// ---- State ----
 const entities = [];
-const camps = [];
-const pendingStrikes = []; // delayed AoE strikes (e.g. meteor ultimate)
-let player = null, enemy = null;
-let started = false, gameEnded = false;
-let matchTime = 0, waveTimer = 3, hudTimer = 0;
+const groundItems = [];
+const pendingStrikes = [];
+const fireZones = [];
+let player = null;
+let boss = null;
+let depth = 1, mobsAlive = 0, portalActive = false;
+let started = false, gameEnded = false, matchTime = 0, hudTimer = 0;
 const clock = new THREE.Clock();
-const camOffset = new THREE.Vector3(0, 46, 38);
+const keys = {};
+let camYaw = 0;
+const CAM_DIST = 34, CAM_HEIGHT = 27;
 
-function add(e) { scene.add(e.mesh); entities.push(e); return e; }
+function add(e) { entities.push(e); scene.add(e.mesh); return e; }
+function removeEntity(e) { scene.remove(e.mesh); const i = entities.indexOf(e); if (i >= 0) entities.splice(i, 1); }
 
-camera.position.set(0, 95, 70);
-camera.lookAt(0, 0, 0);
-
-// ---- Floating damage numbers (DOM overlay projected from world space) ----
-const fxLayer = document.getElementById('fx-layer');
-const floaters = [];
-function spawnDamageNumber(worldPos, amount, kind) {
-  if (!fxLayer) return;
-  const el = document.createElement('div');
-  el.className = 'dmg ' + (kind || '');
-  el.textContent = Math.round(amount);
-  fxLayer.appendChild(el);
-  floaters.push({
-    el, pos: worldPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2, 3.2, 0)),
-    vy: 2.0, t: 0, dur: 0.95,
-  });
-}
-function updateFloaters() {
-  for (let i = floaters.length - 1; i >= 0; i--) {
-    const f = floaters[i];
-    f.t += 0.016; f.pos.y += f.vy * 0.016;
-    const v = f.pos.clone().project(camera);
-    if (v.z > 1) { f.el.style.display = 'none'; }
-    else {
-      const x = (v.x * 0.5 + 0.5) * window.innerWidth;
-      const y = (-v.y * 0.5 + 0.5) * window.innerHeight;
-      f.el.style.display = 'block';
-      f.el.style.transform = `translate(-50%,-50%) translate(${x}px,${y}px) scale(${1 + (1 - f.t / f.dur) * 0.4})`;
-      f.el.style.opacity = String(Math.max(0, 1 - f.t / f.dur));
-    }
-    if (f.t >= f.dur) { f.el.remove(); floaters.splice(i, 1); }
-  }
-}
-
-// ---- Aim line for Q ----
-const aimLine = new THREE.Line(
-  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
-  new THREE.LineBasicMaterial({ color: 0x8fe0ff, transparent: true, opacity: 0 })
-);
-aimLine.frustumCulled = false;
-scene.add(aimLine);
-function updateAim() {
-  const qAb = player && player.abilities ? player.abilities.Q : null;
-  const directional = qAb && (qAb.type === 'projectile' || qAb.type === 'dash');
-  if (!started || !player || !player.alive || gameEnded || (player.abilityLevels.Q || 0) < 1 || !directional) {
-    aimLine.material.opacity = 0; return;
-  }
-  const a = scaleAbility(qAb, player.abilityLevels.Q);
-  const dir = new THREE.Vector3().subVectors(pointerWorld, player.pos).setY(0);
-  if (dir.lengthSq() < 0.01) { aimLine.material.opacity = 0; return; }
-  dir.normalize();
-  const from = player.pos.clone(); from.y = 2.2;
-  const reach = a.range || 30;
-  const to = from.clone().addScaledVector(dir, Math.min(reach, 34));
-  const pos = aimLine.geometry.attributes.position;
-  pos.setXYZ(0, from.x, from.y, from.z); pos.setXYZ(1, to.x, to.y, to.z); pos.needsUpdate = true;
-  const ready = player.cdQ <= 0 && player.mana >= a.manaCost;
-  aimLine.material.opacity = ready ? 0.6 : 0.18;
-  aimLine.material.color.setHex(ready ? 0x8fe0ff : 0x5e7a88);
-}
-
-// ---- Input ----
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
-const pointerWorld = new THREE.Vector3();
-
-function screenToGround(clientX, clientY) {
-  mouse.x = (clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const hit = new THREE.Vector3();
-  raycaster.ray.intersectPlane(groundPlane, hit);
-  return hit;
-}
-
-renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
-renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (!started || !player || !player.alive || gameEnded) return;
-  const hit = screenToGround(e.clientX, e.clientY);
-  if (!hit) return;
-  const foe = nearestEnemyAtPoint(hit, 3.5);
-  if (foe) { player.attackTarget = foe; player.target = null; }
-  else { player.target = hit.clone(); player.attackTarget = null; }
-});
-renderer.domElement.addEventListener('pointermove', (e) => {
-  const hit = screenToGround(e.clientX, e.clientY);
-  if (hit) pointerWorld.copy(hit);
-});
-
+// ---------- input ----------
 window.addEventListener('keydown', (e) => {
   const k = e.key.toLowerCase();
-  if (k === 'b' && started) { ui.toggleShop(); return; }
+  keys[k] = true;
+  if (k === 'i' && started) { ui.toggleInventory(player); return; }
   if (!started || gameEnded || !player || !player.alive) return;
-  if (e.shiftKey && (k === 'q' || k === 'w' || k === 'e' || k === 'r')) { levelAbility(player, k.toUpperCase()); return; }
-  if (k === 'q') castAbility('Q');
-  else if (k === 'w') castAbility('W');
-  else if (k === 'e') castAbility('E');
-  else if (k === 'r') castAbility('R');
-  else if (k === '1') levelAbility(player, 'Q');
-  else if (k === '2') levelAbility(player, 'W');
-  else if (k === '3') levelAbility(player, 'E');
-  else if (k === '4') levelAbility(player, 'R');
-  else if (k === 's') { player.target = null; player.attackTarget = null; }
+  if (['1', '2', '3', '4'].includes(k)) {
+    const slot = { '1': 'Q', '2': 'W', '3': 'E', '4': 'R' }[k];
+    if (e.shiftKey) levelAbility(player, slot); else castAbility(slot);
+  }
+});
+window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+window.addEventListener('mousedown', (e) => {
+  if (!started || gameEnded || !player || !player.alive) return;
+  if (e.button === 0) manualAttack();
 });
 
-function nearestEnemyAtPoint(point, radius) {
-  let best = null, bd = radius;
-  for (const e of entities) {
-    if (!e.alive || e.team === player.team) continue;
-    const d = Math.hypot(e.pos.x - point.x, e.pos.z - point.z);
-    if (d <= (radius + (e.radius || 1)) && d < bd) { bd = d; best = e; }
-  }
-  return best;
+function lerpAngle(a, b, t) {
+  let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return a + d * t;
+}
+function clampArena(p) {
+  const d = Math.hypot(p.x, p.z);
+  if (d > WORLD.radius - 2) { p.x *= (WORLD.radius - 2) / d; p.z *= (WORLD.radius - 2) / d; }
+}
+function facingPoint(range) {
+  const a = player.mesh.rotation.y;
+  return new THREE.Vector3(player.pos.x + Math.sin(a) * range, 0, player.pos.z + Math.cos(a) * range);
 }
 
-// ---- Progression ----
+// ---------- progression ----------
 function levelAbility(hero, key) {
-  if (hero.skillPoints <= 0) { if (hero === player) ui.showToast('Нет очков умений — получи уровень', 1.3); return; }
+  if (hero.skillPoints <= 0) { ui.showToast('Нет очков умений', 1.1); return; }
   const isUlt = key === 'R';
   const cap = isUlt ? MAX_ULT_LEVEL : MAX_ABILITY_LEVEL;
   const cur = hero.abilityLevels[key] || 0;
-  if (cur >= cap) { if (hero === player) ui.showToast('Способность уже максимальна', 1.2); return; }
+  if (cur >= cap) { ui.showToast('Уже максимум', 1.0); return; }
   if (isUlt) {
-    const reqLevel = (hero.abilities.R.ultReq || 6) + cur * 5;
-    if (hero.level < reqLevel) { if (hero === player) ui.showToast(`Ультимейт откроется на ур.${reqLevel}`, 1.8); return; }
+    const req = (hero.abilities.R.ultReq || 6) + cur * 5;
+    if (hero.level < req) { ui.showToast(`Ульта откроется на ур.${req}`, 1.6); return; }
   }
   hero.abilityLevels[key]++;
   hero.skillPoints--;
-  if (hero === player) { ui.showToast(`${hero.abilities[key].name} прокачан до ур.${hero.abilityLevels[key]}`, 1.3); refreshHud(); }
+  ui.showToast(`${hero.abilities[key].name} ур.${hero.abilityLevels[key]}`, 1.2);
+  refreshHud();
 }
 
-function applyItemStats(hero, stats, sign = 1) {
-  for (const [k, v] of Object.entries(stats)) {
-    const delta = v * sign;
-    if (k === 'maxHp') { hero.maxHp += delta; hero.hp += delta; }
-    else if (k === 'maxMana') { hero.maxMana += delta; hero.mana += delta; }
-    else if (k === 'moveSpeed') {
-      hero.baseMoveSpeed += delta;
-      if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; else hero.moveSpeed += delta;
-    } else { hero[k] = (hero[k] || 0) + delta; }
+function grantXp(amount) {
+  player.xp += Math.round(amount * (1 + (player.xpGain || 0)));
+  let leveled = false;
+  while (player.level < MAX_LEVEL && player.xp >= xpForLevel(player.level)) {
+    player.xp -= xpForLevel(player.level);
+    player.level++; player.skillPoints++; leveled = true;
+  }
+  if (leveled) {
+    recomputeStats(player);
+    player.hp = player.maxHp; player.mana = player.maxMana;
+    ui.showToast(`Уровень ${player.level}!`, 1.6);
   }
 }
 
-function nearOwnFountain(hero) {
-  const base = hero.team === 'radiant' ? WORLD.radiantBase : WORLD.direBase;
-  return Math.hypot(hero.pos.x - base.x, hero.pos.z - base.z) <= WORLD.fountainRadius;
-}
-
-function buyItem(hero, item) {
-  if (hero.items.length >= MAX_ITEMS) { if (hero === player) ui.showToast('Инвентарь полон', 1.2); return false; }
-  if (hero.gold < item.cost) { if (hero === player) ui.showToast('Недостаточно золота', 1.2); return false; }
-  if (hero === player && !nearOwnFountain(hero)) { ui.showToast('Покупать можно только у своей базы (фонтан)', 1.6); return false; }
-  hero.gold -= item.cost; hero.items.push(item.id);
-  applyItemStats(hero, item.stats, 1);
-  if (hero === player) { ui.showToast(`Куплено: ${item.name}`, 1.2); refreshHud(); }
-  return true;
-}
-
-ui.callbacks = {
-  onBuy: (itemId) => { const it = ITEMS.find(i => i.id === itemId); if (it) buyItem(player, it); },
-  onLevel: (key) => levelAbility(player, key),
-};
-
-function refreshHud() {
-  if (!player) return;
-  ui.updateHero(player); ui.updateAbilities(player); ui.updateInventory(player);
-  ui.renderShop(ITEMS, player, nearOwnFountain(player));
-}
-
-// ---- Abilities (unified for player & AI) ----
-function teamHex(team) { return team === 'radiant' ? 0x66ccff : 0xff7755; }
-
-function castForHero(hero, key, aimPos, isPlayer) {
-  const lvl = hero.abilityLevels[key] || 0;
-  const ab = hero.abilities[key];
-  if (lvl < 1) { if (isPlayer) ui.showToast(`Способность не изучена — нажми ${key === 'Q' ? '1' : key === 'W' ? '2' : '3'}`, 1.8); return false; }
-  const s = scaleAbility(ab, lvl);
-  if (s.damage) s.damage *= (1 + (hero.spellAmp || 0));
-  const cdKey = 'cd' + key;
-  if (hero[cdKey] > 0) { if (isPlayer) ui.showToast('На перезарядке', 0.8); return false; }
-  if (hero.mana < s.manaCost) { if (isPlayer) ui.showToast('Недостаточно маны', 1); return false; }
-  const col = teamHex(hero.team);
-  const dir = new THREE.Vector3().subVectors(aimPos, hero.pos).setY(0);
-
-  fx.spawnCastCircle(hero.pos, hero.accent);
-
-  switch (ab.type) {
-    case 'projectile': {
-      if (dir.lengthSq() < 0.01) return false;
-      dir.normalize(); hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-      fx.spawnBolt(hero, dir, entities, s.damage, { speed: s.speed, range: s.range, slow: ab.slow });
-      break;
-    }
-    case 'aoe': {
-      fx.spawnCastFlash(hero.pos, col);
-      fx.spawnNova(hero, s.radius);
-      for (const e of entities) {
-        if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius)
-          applyDamage(e, s.damage, hero);
-      }
-      break;
-    }
-    case 'buff_speed': {
-      fx.spawnCastFlash(hero.pos, hero.accent);
-      hero.buffE = s.duration;
-      hero.moveSpeed = hero.baseMoveSpeed + s.speedBonus;
-      if (isPlayer) ui.showToast('Ускорение!', 1);
-      break;
-    }
-    case 'buff_guard': {
-      fx.spawnCastFlash(hero.pos, hero.accent);
-      if (hero.guardT > 0) hero.armor -= (hero.guardBonus || 0);
-      hero.guardBonus = s.armorBonus; hero.armor += s.armorBonus;
-      hero.guardHeal = s.healPerSec; hero.guardT = s.duration;
-      if (isPlayer) ui.showToast('Бастион: +броня и лечение', 1.2);
-      break;
-    }
-    case 'dash': {
-      if (dir.lengthSq() < 0.01) return false;
-      const dist = Math.min(s.range, dir.length()); dir.normalize();
-      hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-      const to = hero.pos.clone().addScaledVector(dir, dist);
-      hero.dash = { from: hero.pos.clone(), to, dur: 0.2, t: 0, damage: s.damage, radius: s.radius, ghostT: 0 };
-      hero.target = null; hero.attackTarget = null;
-      break;
-    }
-    case 'blink': {
-      if (dir.lengthSq() < 0.01) return false;
-      const dist = Math.min(s.range, dir.length()); dir.normalize();
-      fx.spawnCastFlash(hero.pos, hero.accent);
-      hero.pos.addScaledVector(dir, dist);
-      fx.spawnCastFlash(hero.pos, hero.accent);
-      hero.target = null; hero.attackTarget = null;
-      break;
-    }
-    case 'ultimate_guard': {
-      fx.spawnCastFlash(hero.pos, col);
-      fx.spawnNova(hero, s.radius);
-      for (const e of entities) {
-        if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= s.radius) {
-          applyDamage(e, s.damage, hero);
-          if (ab.slow) { e.slowT = ab.slow.dur; e.slowFactor = ab.slow.factor; }
-        }
-      }
-      if (hero.guardT > 0) hero.armor -= (hero.guardBonus || 0);
-      hero.guardBonus = s.armorBonus; hero.armor += s.armorBonus;
-      hero.guardHeal = s.healPerSec; hero.guardT = s.duration;
-      if (isPlayer) ui.showToast('НЕСОКРУШИМЫЙ!', 1.4);
-      break;
-    }
-    case 'meteor': {
-      const aim = dir.lengthSq() < 0.01 ? hero.pos.clone() : hero.pos.clone().addScaledVector(dir.clone().normalize(), Math.min(s.range, dir.length()));
-      fx.spawnCastCircle(aim, hero.accent);
-      pendingStrikes.push({ pos: aim, t: ab.delay || 1.1, radius: s.radius, damage: s.damage, team: hero.team, owner: hero, slow: ab.slow, color: hero.accent });
-      if (isPlayer) ui.showToast('Метеор призван!', 1.2);
-      break;
-    }
-    case 'blink_strike': {
-      if (dir.lengthSq() > 0.01) {
-        const dist = Math.min(s.range, dir.length()); dir.normalize();
-        hero.mesh.rotation.y = Math.atan2(dir.x, dir.z);
-        fx.spawnCastFlash(hero.pos, hero.accent);
-        hero.pos.addScaledVector(dir, dist);
-        fx.spawnCastFlash(hero.pos, hero.accent);
-      }
-      let best = null, bd = s.radius;
-      for (const e of entities) {
-        if (e.alive && e.team !== hero.team && e.team !== 'neutral') {
-          const d = hero.pos.distanceTo(e.pos);
-          if (d < bd) { bd = d; best = e; }
-        }
-      }
-      if (best) { fx.spawnImpact(best.pos, hero.accent); applyDamage(best, s.damage, hero); }
-      hero.buffE = Math.max(hero.buffE || 0, s.duration);
-      hero.moveSpeed = hero.baseMoveSpeed + (s.speedBonus || 5);
-      hero.target = null; hero.attackTarget = null;
-      if (isPlayer) ui.showToast('ЖАТВА!', 1.4);
-      break;
-    }
-  }
-  hero.mana -= s.manaCost;
-  hero[cdKey] = s.cooldown * (1 - Math.min(0.6, hero.cdr || 0));
-  if (hero.isGLTF) playHeroAnim(hero, ab.type === 'dash' ? 'attack' : 'cast', 0.7);
-  if (isPlayer) ui.flashAbility(key);
-  return true;
-}
-
-function castAbility(key) { castForHero(player, key, pointerWorld, true); }
-
-function updateDash(hero, dt) {
-  const d = hero.dash;
-  d.t += dt;
-  const k = Math.min(1, d.t / d.dur);
-  hero.pos.lerpVectors(d.from, d.to, k);
-  d.ghostT -= dt;
-  if (d.ghostT <= 0) { fx.spawnGhost(hero.pos, hero.accent); d.ghostT = 0.04; }
-  if (k >= 1) {
-    fx.spawnCastFlash(hero.pos, hero.accent);
-    for (const e of entities) {
-      if (e.alive && e.team !== hero.team && e.team !== 'neutral' && hero.pos.distanceTo(e.pos) <= d.radius)
-        applyDamage(e, d.damage, hero);
-    }
-    hero.dash = null;
-  }
-}
-
-function resolveStrike(st) {
-  fx.spawnImpact(st.pos, st.color);
-  fx.spawnCastFlash(st.pos, st.color);
-  for (const e of entities) {
-    if (e.alive && e.team !== st.team && e.team !== 'neutral' && Math.hypot(e.pos.x - st.pos.x, e.pos.z - st.pos.z) <= st.radius) {
-      applyDamage(e, st.damage, st.owner);
-      if (st.slow) { e.slowT = st.slow.dur; e.slowFactor = st.slow.factor; }
-    }
-  }
-}
-
-// ---- Combat ----
+// ---------- combat ----------
 function attack(attacker, target) {
   if (attacker.attackCd > 0 || !target.alive) return;
   attacker.attackCd = 1 / attacker.attackSpeed;
-  attacker.atkAnim = 0.25;
   if (attacker.isGLTF) playHeroAnim(attacker, 'attack', Math.min(0.7, 1 / attacker.attackSpeed));
   let dmg = attacker.attackDamage;
   const isCrit = (attacker.critChance || 0) > 0 && Math.random() < attacker.critChance;
   if (isCrit) dmg *= (attacker.critMult || 1.8);
+  const col = attacker.team === 'player' ? 0x8fd0ff : 0xffb088;
   if (attacker.attackType === 'ranged') {
-    fx.spawnBasic(attacker, target, dmg, attacker.team === 'radiant' ? 0x8fd0ff : 0xffb088);
+    fx.spawnBasic(attacker, target, dmg, col);
   } else {
     applyDamage(target, dmg, attacker);
-    if (attacker.kind === 'hero' || attacker.kind === 'creep')
-      fx.spawnHit(target.pos, attacker.team === 'dire' ? 0xff9966 : 0xbfe6ff);
+    fx.spawnHit(target.pos, attacker.team === 'player' ? 0xbfe6ff : 0xff9966);
   }
   if (isCrit) fx.spawnImpact(target.pos, 0xffe066);
   if ((attacker.lifesteal || 0) > 0 && attacker.alive) attacker.hp = Math.min(attacker.maxHp, attacker.hp + dmg * attacker.lifesteal);
+}
+
+function manualAttack() {
+  if (player.dash) return;
+  const t = nearestEnemy(player.pos, player.attackRange * 1.3);
+  if (t) { player.mesh.rotation.y = Math.atan2(t.pos.x - player.pos.x, t.pos.z - player.pos.z); attack(player, t); }
 }
 
 function applyDamage(target, amount, attacker) {
   const wasAlive = target.alive;
   target.takeDamage(amount, attacker);
   if (target.isGLTF && target.alive && target.actions && target.actions.hit && target.oneShotT <= 0 && (target._hitCd || 0) <= 0) {
-    playHeroAnim(target, 'hit', 0.4);
-    target._hitCd = 0.9;
+    playHeroAnim(target, 'hit', 0.4); target._hitCd = 0.9;
   }
-  const kind = target === player ? 'taken' : (attacker === player ? 'player' : 'normal');
-  spawnDamageNumber(target.pos, amount, kind);
+  spawnDamageNumber(target.pos, amount, target === player ? 'taken' : (attacker === player ? 'player' : 'normal'));
   if (wasAlive && !target.alive) onKill(target, attacker);
 }
 
-function grantXp(hero, amount) {
-  hero.xp += amount;
-  const newLevel = Math.min(MAX_LEVEL, 1 + Math.floor(hero.xp / XP_PER_LEVEL));
-  while (hero.level < newLevel) {
-    hero.level++;
-    hero.maxHp += 55; hero.hp += 55; hero.maxMana += 20; hero.mana += 20;
-    hero.attackDamage += 6; hero.skillPoints++;
-    if (hero === player) ui.showToast(`Уровень ${hero.level}! +1 очко умений`, 1.6);
-    else spendEnemySkillPoints(hero);
+function nearestEnemy(pos, range) {
+  let best = null, bd = range;
+  for (const e of entities) {
+    if (!e.alive || e.team !== 'enemy') continue;
+    const d = Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z);
+    if (d < bd) { bd = d; best = e; }
   }
-  if (hero === player) refreshHud();
-}
-
-function spendEnemySkillPoints(hero) {
-  const order = ['Q', 'W', 'Q', 'E', 'Q', 'W', 'Q', 'W', 'E', 'W', 'E', 'E'];
-  while (hero.skillPoints > 0) {
-    let learned = false;
-    const rAb = hero.abilities.R;
-    const rCur = hero.abilityLevels.R || 0;
-    if (rAb && rCur < MAX_ULT_LEVEL && hero.level >= (rAb.ultReq || 6) + rCur * 5) {
-      hero.abilityLevels.R++; hero.skillPoints--; learned = true;
-    }
-    if (!learned) for (const key of order) {
-      if (hero.abilityLevels[key] < MAX_ABILITY_LEVEL) { hero.abilityLevels[key]++; hero.skillPoints--; learned = true; break; }
-    }
-    if (!learned) break;
-  }
-}
-
-function enemyAutoBuy(hero) {
-  if (hero.items.length >= MAX_ITEMS) return;
-  const nextId = AI_BUILD_ORDER[hero.aiBuyIndex];
-  if (!nextId) return;
-  const item = ITEMS.find(i => i.id === nextId);
-  if (item && hero.gold >= item.cost) {
-    hero.gold -= item.cost; hero.items.push(item.id);
-    applyItemStats(hero, item.stats, 1); hero.aiBuyIndex++;
-  }
-}
-
-const XP_RADIUS = 30;        // proximity XP range around a dying enemy unit
-const GOLD_PER_SEC = 1.6;     // passive income so the shop is always reachable
-
-// Gold to the last-hitter; XP to every opposing hero nearby; small assist gold if you were near but didn't last-hit.
-function awardKillRewards(victim, killer) {
-  const bounty = victim.goldBounty || 0;
-  const xp = victim.xpBounty || 60;
-  if (killer && killer.kind === 'hero') killer.gold += bounty;
-  for (const h of [player, enemy]) {
-    if (!h || !h.alive || h.team === victim.team) continue;
-    if (h.pos.distanceTo(victim.pos) > XP_RADIUS) continue;
-    grantXp(h, xp);
-    let gained = 0;
-    if (h === killer) gained = bounty;
-    else { gained = Math.round(bounty * 0.4); h.gold += gained; }
-    if (h === player && gained > 0) {
-      const tag = victim.kind === 'neutral' ? 'лес' : victim.kind === 'tower' ? 'башня' : (h === killer ? 'ластхит' : 'рядом');
-      ui.showToast(`+${gained} золота (${tag})`, 0.8);
-    }
-  }
+  return best;
 }
 
 function onKill(victim, killer) {
-  if (victim.kind === 'creep' || victim.kind === 'tower' || victim.kind === 'neutral') {
-    awardKillRewards(victim, killer);
-    if (victim.kind === 'tower') ui.showToast(killer === player ? 'Башня уничтожена! +золото' : 'Наша башня пала', 1.8);
+  if (victim === player) {
+    player.respawnTimer = HERO_RESPAWN;
+    player.dying = true; player.deathT = 0;
+    return;
+  }
+  if (victim.team === 'enemy') {
+    grantXp(victim.xpBounty || 0);
+    player.gold += victim.goldBounty || 0;
+    const item = rollDrop(victim.isBoss ? 1 : victim.dropChance, victim.itemLevel || depth, victim.rarityBonus || 0, victim.dropRarityMin || null);
+    if (item) spawnGroundItem(item, victim.pos);
     victim.dying = true; victim.deathT = 0;
-  } else if (victim.kind === 'hero') {
-    if (killer && killer.kind === 'hero') {
-      killer.kills++; killer.gold += 250; grantXp(killer, 180);
-      ui.showToast(killer === player ? 'Убийство героя! +250' : `${player.name} убит`, 2);
+    if (victim.isBoss) { boss = null; ui.updateBossBar(null); }
+    else mobsAlive = Math.max(0, mobsAlive - 1);
+    checkClear();
+    refreshHud();
+  }
+}
+
+// ---------- abilities ----------
+function castAbility(key) { castForHero(player, key); }
+
+function castForHero(hero, key) {
+  const lvl = hero.abilityLevels[key] || 0;
+  const ab = hero.abilities[key];
+  if (lvl < 1) { ui.showToast(`Не изучено (Shift+${key === 'Q' ? 1 : key === 'W' ? 2 : key === 'E' ? 3 : 4})`, 1.5); return; }
+  const cdKey = 'cd' + key;
+  if (hero[cdKey] > 0) { ui.showToast('Перезарядка', 0.7); return; }
+  const s = scaleAbility(ab, lvl);
+  if (s.damage) s.damage *= (1 + (hero.spellAmp || 0));
+  if (hero.mana < ab.manaCost) { ui.showToast('Мало маны', 0.9); return; }
+  const accent = hero.accent;
+  const aim = facingPoint(Math.min(s.range || 20, 26));
+  const dir = new THREE.Vector3(Math.sin(hero.mesh.rotation.y), 0, Math.cos(hero.mesh.rotation.y));
+  fx.spawnCastCircle(hero.pos, accent);
+
+  switch (ab.type) {
+    case 'projectile':
+      fx.spawnBolt(hero, dir, entities, s.damage, { speed: s.speed, range: s.range, slow: ab.slow });
+      break;
+    case 'aoe':
+      fx.spawnNova(hero, s.radius);
+      for (const e of entities) if (e.alive && e.team === 'enemy' && hero.pos.distanceTo(e.pos) <= s.radius) {
+        applyDamage(e, s.damage, hero);
+        if (ab.slow) { e.slowT = ab.slow.dur; e.slowFactor = ab.slow.factor; }
+      }
+      break;
+    case 'buff_speed':
+      fx.spawnCastFlash(hero.pos, accent);
+      hero.buffE = s.duration; hero.moveSpeed = hero.baseMoveSpeed + s.speedBonus;
+      break;
+    case 'buff_guard':
+      fx.spawnCastFlash(hero.pos, accent);
+      if (hero.guardT > 0) hero.armor -= (hero.guardBonus || 0);
+      hero.guardBonus = s.armorBonus; hero.armor += s.armorBonus;
+      hero.guardHeal = s.healPerSec; hero.guardT = s.duration;
+      break;
+    case 'dash': {
+      const dist = Math.min(s.range, 22);
+      const to = hero.pos.clone().addScaledVector(dir, dist);
+      hero.dash = { from: hero.pos.clone(), to, dur: 0.2, t: 0, damage: s.damage, radius: s.radius, ghostT: 0 };
+      break;
     }
-    victim.deaths++;
-    victim.respawnTimer = HERO_RESPAWN + victim.level * 1.5;
-    victim.dying = true; victim.deathT = 0;
-  } else if (victim.kind === 'base') {
-    victim.dying = true; victim.deathT = 0;
-    endGame(victim.team !== player.team);
+    case 'blink':
+      fx.spawnCastFlash(hero.pos, accent);
+      hero.pos.addScaledVector(dir, Math.min(s.range, 28)); clampArena(hero.pos);
+      fx.spawnCastFlash(hero.pos, accent);
+      break;
+    case 'ultimate_guard':
+      fx.spawnCastFlash(hero.pos, accent); fx.spawnNova(hero, s.radius);
+      for (const e of entities) if (e.alive && e.team === 'enemy' && hero.pos.distanceTo(e.pos) <= s.radius) {
+        applyDamage(e, s.damage, hero);
+        if (ab.slow) { e.slowT = ab.slow.dur; e.slowFactor = ab.slow.factor; }
+      }
+      if (hero.guardT > 0) hero.armor -= (hero.guardBonus || 0);
+      hero.guardBonus = s.armorBonus; hero.armor += s.armorBonus;
+      hero.guardHeal = s.healPerSec; hero.guardT = s.duration;
+      ui.showToast('НЕСОКРУШИМЫЙ!', 1.3);
+      break;
+    case 'meteor': {
+      const tp = hero.pos.clone().addScaledVector(dir, Math.min(s.range, 30));
+      fx.spawnCastCircle(tp, accent);
+      pendingStrikes.push({ pos: tp, t: ab.delay || 1.1, radius: s.radius, damage: s.damage, slow: ab.slow, color: accent, owner: hero });
+      ui.showToast('Метеор!', 1.0);
+      break;
+    }
+    case 'blink_strike': {
+      hero.pos.addScaledVector(dir, Math.min(s.range, 26)); clampArena(hero.pos);
+      fx.spawnCastFlash(hero.pos, accent);
+      const t = nearestEnemy(hero.pos, s.radius);
+      if (t) { fx.spawnImpact(t.pos, accent); applyDamage(t, s.damage, hero); }
+      hero.buffE = Math.max(hero.buffE || 0, s.duration); hero.moveSpeed = hero.baseMoveSpeed + (s.speedBonus || 5);
+      ui.showToast('ЖАТВА!', 1.3);
+      break;
+    }
+  }
+  hero.mana -= ab.manaCost;
+  hero[cdKey] = ab.cooldown * (1 - Math.min(0.6, hero.cdr || 0));
+  if (hero.isGLTF) playHeroAnim(hero, ab.type === 'dash' || ab.type === 'blink_strike' ? 'attack' : 'cast', 0.7);
+  ui.flashAbility(key);
+}
+
+function updateDash(hero, dt) {
+  const d = hero.dash; d.t += dt;
+  const k = Math.min(1, d.t / d.dur);
+  hero.pos.lerpVectors(d.from, d.to, k); clampArena(hero.pos);
+  d.ghostT -= dt;
+  if (d.ghostT <= 0) { fx.spawnGhost(hero.pos, hero.accent); d.ghostT = 0.04; }
+  if (k >= 1) {
+    fx.spawnCastFlash(hero.pos, hero.accent);
+    for (const e of entities) if (e.alive && e.team === 'enemy' && hero.pos.distanceTo(e.pos) <= d.radius) applyDamage(e, d.damage, hero);
+    hero.dash = null;
   }
 }
 
-function removeEntity(e) {
-  scene.remove(e.mesh);
-  const i = entities.indexOf(e);
-  if (i >= 0) entities.splice(i, 1);
+// ---------- loot on ground ----------
+function spawnGroundItem(item, pos) {
+  const g = new THREE.Group();
+  const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.8, 0),
+    new THREE.MeshStandardMaterial({ color: item.hex, emissive: item.hex, emissiveIntensity: 1.0, flatShading: true }));
+  gem.position.y = 1.4; g.add(gem);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 5, 8, 1, true),
+    new THREE.MeshBasicMaterial({ color: item.hex, transparent: true, opacity: 0.35, side: THREE.DoubleSide }));
+  beam.position.y = 2.6; g.add(beam);
+  g.position.set(pos.x, 0, pos.z);
+  scene.add(g);
+  groundItems.push({ item, mesh: g, gem, pos: new THREE.Vector3(pos.x, 0, pos.z) });
 }
 
-function respawnHero(hero) {
-  hero.hp = hero.maxHp; hero.mana = hero.maxMana; hero.alive = true;
-  hero.dying = false; hero.deathT = 0;
-  hero.mesh.visible = true; hero.mesh.scale.setScalar(1); hero.mesh.rotation.z = 0;
-  const base = hero.team === 'radiant' ? WORLD.radiantBase : WORLD.direBase;
-  hero.pos.set(base.x + (Math.random() - 0.5) * 6, 0, base.z + (Math.random() - 0.5) * 6);
-  hero.mesh.position.copy(hero.pos);
-  hero.target = null; hero.attackTarget = null;
-  hero.dash = null; hero.slowT = 0;
-  if (hero.guardT > 0) { hero.armor -= (hero.guardBonus || 0); hero.guardBonus = 0; hero.guardT = 0; }
-  if (hero.isGLTF) {
-    for (const k in hero.actions) hero.actions[k].stop();
-    hero._deathStarted = false; hero.oneShotT = 0; hero.currentKey = 'idle';
-    if (hero.actions.idle) hero.actions.idle.reset().play();
-  }
-  hero.setHpBar();
-}
-
-// ---- Creep waves ----
-function spawnWave() {
-  for (const team of [TEAM.RADIANT, TEAM.DIRE]) {
-    const base = team === 'radiant' ? WORLD.radiantBase : WORLD.direBase;
-    for (let i = 0; i < CREEP.perWave; i++) {
-      add(createCreep(team, base.x + (Math.random() - 0.5) * 6, base.z + (Math.random() - 0.5) * 6));
+function updateGroundItems(dt) {
+  for (let i = groundItems.length - 1; i >= 0; i--) {
+    const gi = groundItems[i];
+    gi.gem.rotation.y += dt * 2;
+    if (player.alive && Math.hypot(player.pos.x - gi.pos.x, player.pos.z - gi.pos.z) < 3.2) {
+      if (addToInventory(player, gi.item)) {
+        const up = isUpgrade(player, gi.item);
+        ui.showToast(`${gi.item.name}${up ? ' ⬆' : ''}`, 1.6, gi.item.color);
+        scene.remove(gi.mesh); groundItems.splice(i, 1);
+        if (ui.isInventoryOpen()) ui.refreshInventory(player);
+      }
     }
   }
 }
 
-// ---- Jungle camps ----
-function spawnCamp(camp) {
-  for (let i = 0; i < camp.size; i++) {
-    const ang = (i / camp.size) * Math.PI * 2;
-    const n = createNeutral(camp.x + Math.cos(ang) * 2.6, camp.z + Math.sin(ang) * 2.6);
-    camp.members.push(n); add(n);
-  }
-  camp.respawnTimer = 0;
-}
-function updateCamps(dt) {
-  for (const camp of camps) {
-    const cleared = camp.members.length > 0 && camp.members.every(m => !m.alive);
-    if (cleared) {
-      camp.respawnTimer += dt;
-      if (camp.respawnTimer >= NEUTRAL.respawn) { camp.members = []; spawnCamp(camp); }
+// ---------- delayed strikes & fire zones ----------
+function resolveStrike(st) {
+  fx.spawnImpact(st.pos, st.color); fx.spawnCastFlash(st.pos, st.color);
+  for (const e of entities) {
+    if (!e.alive) continue;
+    if (st.target === 'player' && e !== player) continue;
+    if (st.target !== 'player' && e.team !== 'enemy') continue;
+    if (Math.hypot(e.pos.x - st.pos.x, e.pos.z - st.pos.z) <= st.radius) {
+      applyDamage(e, st.damage, st.owner);
+      if (st.slow) { e.slowT = st.slow.dur; e.slowFactor = st.slow.factor; }
     }
-    for (const n of camp.members) if (n.alive) updateNeutral(n, entities, attack);
+  }
+}
+function spawnFireZone(pos, r, dur, dps) {
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 20),
+    new THREE.MeshBasicMaterial({ color: 0xff5520, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+  disc.rotation.x = -Math.PI / 2; disc.position.set(pos.x, 0.2, pos.z);
+  scene.add(disc);
+  fireZones.push({ mesh: disc, pos: new THREE.Vector3(pos.x, 0, pos.z), r, t: dur, dps, tick: 0 });
+}
+function updateHazards(dt) {
+  for (let i = pendingStrikes.length - 1; i >= 0; i--) {
+    const st = pendingStrikes[i]; st.t -= dt;
+    if (st.t <= 0) { resolveStrike(st); pendingStrikes.splice(i, 1); }
+  }
+  for (let i = fireZones.length - 1; i >= 0; i--) {
+    const fzz = fireZones[i]; fzz.t -= dt; fzz.tick -= dt;
+    if (fzz.tick <= 0 && player.alive && Math.hypot(player.pos.x - fzz.pos.x, player.pos.z - fzz.pos.z) <= fzz.r) {
+      applyDamage(player, fzz.dps, boss || null); fzz.tick = 0.5;
+    }
+    if (fzz.t <= 0) { scene.remove(fzz.mesh); fireZones.splice(i, 1); }
   }
 }
 
-// ---- Lifecycle ----
-function initHero(hero) {
-  hero.cdQ = 0; hero.cdW = 0; hero.cdE = 0; hero.cdR = 0; hero.buffE = 0;
-  hero.abilityLevels = { Q: 0, W: 0, E: 0, R: 0 };
-  hero.skillPoints = 1; hero.items = []; hero.aiBuyIndex = 0; hero._ghostT = 0;
-  hero.dash = null; hero.guardT = 0; hero.guardBonus = 0; hero.slowT = 0;
-  hero.critChance = 0; hero.critMult = 1.8; hero.lifesteal = 0; hero.spellAmp = 0; hero.cdr = 0;
+// ---------- boss mechanics ----------
+function updateBossMechanics(b, dt) {
+  b._mt = (b._mt || 0) + dt;
+  const hpPct = b.hp / b.maxHp;
+  const mech = b.mechanic;
+  b._slamT = (b._slamT || 0) - dt;
+  b._barrageT = (b._barrageT || 0) - dt;
+  b._fireT = (b._fireT || 0) - dt;
+  const slam = () => {
+    const tp = player.pos.clone();
+    fx.spawnCastCircle(tp, 0xff5530);
+    pendingStrikes.push({ pos: tp, t: 1.0, radius: 8, damage: b.attackDamage * 2.2, color: 0xff5530, owner: b, target: 'player' });
+  };
+  const barrage = () => {
+    for (let i = 0; i < 3; i++) setTimeout(() => { if (b.alive && player.alive) fx.spawnBasic(b, player, b.attackDamage * 0.8, 0xff7755); }, i * 180);
+  };
+  const fires = () => { for (let i = 0; i < 3; i++) { const a = Math.random() * Math.PI * 2, r = 6 + Math.random() * 10; spawnFireZone({ x: player.pos.x + Math.cos(a) * r, z: player.pos.z + Math.sin(a) * r }, 5, 5, b.attackDamage * 0.4); } };
+
+  if (mech === 'slam' && b._slamT <= 0) { b._slamT = 4.5; slam(); }
+  else if (mech === 'barrage' && b._barrageT <= 0) { b._barrageT = 2.6; barrage(); }
+  else if (mech === 'firezones') { if (b._fireT <= 0) { b._fireT = 5; fires(); } if (b._slamT <= 0) { b._slamT = 6; slam(); } }
+  else if (mech === 'phases') {
+    if (b._slamT <= 0) { b._slamT = hpPct < 0.3 ? 2.8 : 4.5; slam(); }
+    if (hpPct < 0.6 && b._barrageT <= 0) { b._barrageT = 3.2; barrage(); }
+    if (hpPct < 0.3 && b._fireT <= 0) { b._fireT = 5; fires(); if (!b._enraged) { b._enraged = true; b.attackSpeed *= 1.5; ui.showToast('Босс в ярости!', 1.6); } }
+  }
 }
 
-function lanePoint(t) {
+// ---------- dungeon ----------
+function clearEnemies() {
+  for (let i = entities.length - 1; i >= 0; i--) if (entities[i].team === 'enemy') removeEntity(entities[i]);
+  for (const fzz of fireZones) scene.remove(fzz.mesh);
+  fireZones.length = 0; pendingStrikes.length = 0;
+}
+
+function mobSpec(type, grade, x, z) {
+  const g = MOB_GRADES[grade];
+  const hpScale = 1 + depth * DUNGEON.hpPerDepth;
+  const dmgScale = 1 + depth * DUNGEON.dmgPerDepth;
   return {
-    x: WORLD.radiantBase.x + (WORLD.direBase.x - WORLD.radiantBase.x) * t,
-    z: WORLD.radiantBase.z + (WORLD.direBase.z - WORLD.radiantBase.z) * t,
+    model: type.model, x, z,
+    hp: Math.round(type.maxHp * g.hpMul * hpScale),
+    attackDamage: Math.round(type.attackDamage * g.dmgMul * dmgScale),
+    attackRange: type.attackRange, attackSpeed: type.attackSpeed,
+    armor: type.armor + depth * 0.4, moveSpeed: type.moveSpeed, attackType: type.attackType,
+    scale: g.scale, tint: g.tint,
+    name: (g.name ? g.name + ' ' : '') + type.name,
+    xp: Math.round(type.xp * (g.hpMul * 0.5 + 0.5)), gold: Math.round(type.gold * (g.hpMul * 0.5 + 0.5)),
+    dropChance: g.dropChance, rarityBonus: g.rarityBonus, itemLevel: depth,
+  };
+}
+function bossSpec(b, x, z) {
+  return {
+    model: b.model, x, z, isBoss: true, scale: b.scale,
+    hp: Math.round(b.maxHp * (1 + depth * 0.12)), attackDamage: Math.round(b.attackDamage * (1 + depth * 0.1)),
+    attackRange: b.attackRange, attackSpeed: b.attackSpeed, armor: b.armor, moveSpeed: b.moveSpeed,
+    attackType: b.attackType || 'melee', name: b.name, xp: b.xp, gold: b.gold,
+    dropChance: 1, rarityBonus: 3, itemLevel: depth + 2, dropRarityMin: b.dropRarityMin,
+    mechanic: b.mechanic, tint: GRADE_COLOR[b.grade], gradeColor: GRADE_COLOR[b.grade],
   };
 }
 
-function startGame(playerDefId) {
-  const playerDef = getHeroDef(playerDefId);
-  const others = HERO_DEFS.filter(h => h.id !== playerDef.id);
-  const enemyDef = others[Math.floor(Math.random() * others.length)];
-
-  add(createBase(TEAM.RADIANT, WORLD.radiantBase.x, WORLD.radiantBase.z));
-  add(createBase(TEAM.DIRE, WORLD.direBase.x, WORLD.direBase.z));
-  const t = [lanePoint(0.18), lanePoint(0.36), lanePoint(0.64), lanePoint(0.82)];
-  add(createTower(TEAM.RADIANT, t[0].x, t[0].z));
-  add(createTower(TEAM.RADIANT, t[1].x, t[1].z));
-  add(createTower(TEAM.DIRE, t[2].x, t[2].z));
-  add(createTower(TEAM.DIRE, t[3].x, t[3].z));
-
-  player = add(createHero(TEAM.RADIANT, playerDef, heroAssets[playerDef.id]));
-  player.pos.set(WORLD.radiantBase.x + 4, 0, WORLD.radiantBase.z + 4);
-  player.mesh.position.copy(player.pos);
-  initHero(player);
-
-  enemy = add(createHero(TEAM.DIRE, enemyDef, heroAssets[enemyDef.id]));
-  enemy.pos.set(WORLD.direBase.x - 4, 0, WORLD.direBase.z - 4);
-  enemy.mesh.position.copy(enemy.pos);
-  initHero(enemy);
-  enemy.state = 'push';
-  spendEnemySkillPoints(enemy);
-
-  for (const c of CAMPS) { const camp = { ...c, members: [], respawnTimer: 0 }; camps.push(camp); spawnCamp(camp); }
-
-  camera.position.copy(player.pos.clone().add(camOffset));
-  ui.hideHeroSelect();
-  ui.renderShop(ITEMS, player, nearOwnFountain(player));
+function spawnDungeon() {
+  clearEnemies();
+  portalActive = false;
+  const count = Math.floor(DUNGEON.baseMobCount + depth * DUNGEON.mobPerDepth);
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * (WORLD.radius - 24);
+    let grade = 'trash';
+    const roll = Math.random();
+    if (roll > 0.96 - depth * 0.01) grade = 'champion';
+    else if (roll > 0.82 - depth * 0.01) grade = 'elite';
+    const type = MOB_TYPES[(Math.random() * MOB_TYPES.length) | 0];
+    add(createMob(mobSpec(type, grade, Math.cos(a) * r, Math.sin(a) * r)));
+  }
+  mobsAlive = count;
+  const b = bossForDepth(depth);
+  boss = add(createMob(bossSpec(b, WORLD.portal.x, WORLD.portal.z - 6)));
+  ui.updateBossBar(boss);
+  ui.showToast(`Глубина ${depth} — ${b.name} ждёт. Зачисти и войди в портал.`, 4);
   refreshHud();
-  ui.showToast(`Ты — ${playerDef.name} (${playerDef.role}). Прокачай способность (1/2/3) и в бой!`, 5);
-
-  clock.getDelta();
-  started = true;
 }
 
-function updateCamera() {
-  const desired = player.pos.clone().add(camOffset);
-  camera.position.lerp(desired, 0.12);
-  camera.lookAt(player.pos.x, 0, player.pos.z);
+function checkClear() {
+  if (mobsAlive <= 0 && !boss) { portalActive = true; ui.showToast('Портал открыт! Иди к нему ↓', 3); }
 }
 
+// ---------- floaters (DOM damage numbers) ----------
+const floaters = [];
+function spawnDamageNumber(pos, amount, kind) {
+  const el = document.createElement('div');
+  el.className = 'dmg ' + (kind || '');
+  el.textContent = Math.round(amount);
+  const layer = document.getElementById('fx-layer');
+  if (layer) layer.appendChild(el);
+  floaters.push({ el, pos: pos.clone(), t: 0 });
+}
+function updateFloaters(dt) {
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i]; f.t += dt;
+    const p = f.pos.clone().add(new THREE.Vector3(0, 6, 0)); p.project(camera);
+    const x = (p.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-p.y * 0.5 + 0.5) * window.innerHeight - f.t * 46;
+    f.el.style.transform = `translate(${x}px, ${y}px)`;
+    f.el.style.opacity = Math.max(0, 1 - f.t / 0.9);
+    if (f.t > 0.9) { f.el.remove(); floaters.splice(i, 1); }
+  }
+}
+
+// ---------- per-frame hero upkeep ----------
 function tickCooldowns(hero, dt) {
   for (const k of ['cdQ', 'cdW', 'cdE', 'cdR']) hero[k] = Math.max(0, hero[k] - dt);
+  if (hero._hitCd > 0) hero._hitCd -= dt;
   if (hero.buffE > 0) { hero.buffE -= dt; if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; }
   if (hero.slowT > 0) hero.slowT -= dt;
   if (hero.guardT > 0) {
@@ -585,117 +438,130 @@ function tickCooldowns(hero, dt) {
     if (hero.guardT <= 0) { hero.armor -= (hero.guardBonus || 0); hero.guardBonus = 0; }
   }
 }
-
 function regen(e, dt) {
-  let hpReg = e.hpRegen || 0, mpReg = e.manaRegen || 0;
-  if (e.kind === 'hero' && nearOwnFountain(e)) { hpReg += e.maxHp * 0.12; mpReg += e.maxMana * 0.1; }
-  if (hpReg) e.hp = Math.min(e.maxHp, e.hp + hpReg * dt);
-  if (mpReg) e.mana = Math.min(e.maxMana, e.mana + mpReg * dt);
+  if (e.hpRegen) e.hp = Math.min(e.maxHp, e.hp + e.hpRegen * dt);
+  if (e.manaRegen) e.mana = Math.min(e.maxMana, e.mana + e.manaRegen * dt);
 }
 
-function surgeTrail(hero, dt) {
-  if (hero.buffE > 0) {
-    hero._ghostT -= dt;
-    if (hero._ghostT <= 0) { fx.spawnGhost(hero.pos, hero.accent); hero._ghostT = 0.07; }
+// ---------- movement & camera ----------
+function handleMovement(dt) {
+  if (player.dash) return;
+  const f = new THREE.Vector3(Math.sin(camYaw), 0, Math.cos(camYaw));
+  const r = new THREE.Vector3(f.z, 0, -f.x);
+  const mv = new THREE.Vector3();
+  if (keys['w']) mv.add(f);
+  if (keys['s']) mv.sub(f);
+  if (keys['d']) mv.add(r);
+  if (keys['a']) mv.sub(r);
+  let turning = false;
+  if (keys['q']) { camYaw += 1.8 * dt; turning = true; }
+  if (keys['e']) { camYaw -= 1.8 * dt; turning = true; }
+  if (mv.lengthSq() > 0.001) {
+    mv.normalize();
+    const spd = player.slowT > 0 ? player.moveSpeed * (player.slowFactor || 0.5) : player.moveSpeed;
+    player.pos.x += mv.x * spd * dt; player.pos.z += mv.z * spd * dt;
+    clampArena(player.pos);
+    const heading = Math.atan2(mv.x, mv.z);
+    player.mesh.rotation.y = heading;
+    if (!turning) camYaw = lerpAngle(camYaw, heading, 1 - Math.pow(0.0009, dt));
+    player.moving = true;
+  } else {
+    player.moving = false;
   }
 }
+function updateCamera(dt) {
+  const f = new THREE.Vector3(Math.sin(camYaw), 0, Math.cos(camYaw));
+  const desired = player.pos.clone().addScaledVector(f, -CAM_DIST); desired.y = CAM_HEIGHT;
+  camera.position.lerp(desired, 1 - Math.pow(0.0025, dt));
+  camera.lookAt(player.pos.x, 2.5, player.pos.z);
+}
 
-let idleAngle = 0, sceneTime = 0;
+function refreshHud() { if (player) { ui.updateHud(player, depth); ui.updateAbilities(player); } }
+
+function respawnPlayer() {
+  player.hp = player.maxHp; player.mana = player.maxMana; player.alive = true;
+  player.dying = false; player.deathT = 0; player.mesh.visible = true; player.mesh.scale.setScalar(1); player.mesh.rotation.z = 0;
+  player.pos.set(0, 0, 8); player.mesh.position.copy(player.pos);
+  if (player.isGLTF) { for (const k in player.actions) player.actions[k].stop(); player._deathStarted = false; player.oneShotT = 0; player.currentKey = 'idle'; if (player.actions.idle) player.actions.idle.reset().play(); }
+  player.setHpBar();
+}
+
+// ---------- lifecycle ----------
+function startGame(defId) {
+  const def = getHeroDef(defId);
+  player = add(createHero('player', def, heroAssets[defId]));
+  player.pos.set(0, 0, 8); player.mesh.position.copy(player.pos);
+  player.cdQ = 0; player.cdW = 0; player.cdE = 0; player.cdR = 0;
+  player.abilityLevels = { Q: 0, W: 0, E: 0, R: 0 };
+  player.skillPoints = 1; player.buffE = 0; player.guardT = 0; player.guardBonus = 0; player.slowT = 0;
+  player.level = 1; player.xp = 0; player.gold = 0;
+  initInventory(player, def);
+  recomputeStats(player);
+  player.hp = player.maxHp; player.mana = player.maxMana;
+  ui.callbacks = {
+    onEquip: (item) => { equipItem(player, item); ui.refreshInventory(player); refreshHud(); },
+    onUnequip: (slot) => { unequip(player, slot); ui.refreshInventory(player); refreshHud(); },
+    onLevelAbility: (key) => levelAbility(player, key),
+  };
+  depth = 1;
+  spawnDungeon();
+  camYaw = 0;
+  ui.hideClassSelect();
+  refreshHud();
+  ui.showToast(`Ты — ${def.name}. WASD двигаться, Q/E поворот, ЛКМ атака, 1-4 умения, I инвентарь.`, 6);
+  clock.getDelta();
+  started = true;
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(0.05, clock.getDelta());
-  sceneTime += dt;
-  if (scene.userData.update) scene.userData.update(sceneTime);
+  matchTime += dt;
+  if (scene.userData.update) scene.userData.update(matchTime);
   if (started && !gameEnded) update(dt);
-
   for (let i = entities.length - 1; i >= 0; i--) {
     const e = entities[i];
     animateEntityVisual(e, dt, camera);
     if (e.dying && e.deathT >= 0.5) {
-      if (e.kind === 'hero') { if (!e.isGLTF) e.mesh.visible = false; }
-      else { removeEntity(e); }
+      if (e === player) { if (!e.isGLTF) e.mesh.visible = false; }
+      else removeEntity(e);
     }
   }
-
-  updateFloaters();
-  if (started) { updateAim(); updateCamera(); }
-  else {
-    idleAngle += dt * 0.15;
-    camera.position.set(Math.sin(idleAngle) * 80, 90, Math.cos(idleAngle) * 80);
-    camera.lookAt(0, 0, 0);
-  }
+  updateFloaters(dt);
+  if (started) updateCamera(dt);
+  else { camera.position.set(Math.sin(matchTime * 0.15) * 70, 60, Math.cos(matchTime * 0.15) * 70); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
 }
 
 function update(dt) {
-  matchTime += dt;
-  ui.updateTimer(matchTime);
-
-  waveTimer -= dt;
-  if (waveTimer <= 0) { spawnWave(); waveTimer = CREEP.spawnInterval; }
-
-  for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e._hitCd > 0) e._hitCd -= dt; if (e.slowT > 0 && e.kind !== 'hero') e.slowT -= dt; }
-  for (let i = pendingStrikes.length - 1; i >= 0; i--) {
-    const st = pendingStrikes[i];
-    st.t -= dt;
-    if (st.t <= 0) { resolveStrike(st); pendingStrikes.splice(i, 1); }
-  }
-  if (player.alive) player.gold += GOLD_PER_SEC * dt;
-  if (enemy.alive) enemy.gold += GOLD_PER_SEC * dt;
-
   if (player.alive) {
-    tickCooldowns(player, dt); regen(player, dt); surgeTrail(player, dt);
-    if (player.dash) {
-      updateDash(player, dt);
-    } else if (player.attackTarget && player.attackTarget.alive) {
-      const d = player.distanceTo(player.attackTarget);
-      if (d <= player.attackRange) {
-        player.mesh.rotation.y = Math.atan2(player.attackTarget.pos.x - player.pos.x, player.attackTarget.pos.z - player.pos.z);
-        attack(player, player.attackTarget);
-      } else { moveToward(player, player.attackTarget.pos, dt, player.attackRange * 0.85); }
-    } else if (player.target) {
-      if (moveToward(player, player.target, dt, 0.6)) player.target = null;
-    }
+    handleMovement(dt);
+    tickCooldowns(player, dt); regen(player, dt);
+    if (player.dash) updateDash(player, dt);
+    else if (!player.moving) { const t = nearestEnemy(player.pos, player.attackRange); if (t) { player.mesh.rotation.y = Math.atan2(t.pos.x - player.pos.x, t.pos.z - player.pos.z); attack(player, t); } }
+    if (player.buffE > 0) { player._ghostT = (player._ghostT || 0) - dt; if (player._ghostT <= 0) { fx.spawnGhost(player.pos, player.accent); player._ghostT = 0.07; } }
+    if (portalActive && Math.hypot(player.pos.x - WORLD.portal.x, player.pos.z - WORLD.portal.z) < 6) { depth++; spawnDungeon(); }
   } else {
     player.respawnTimer -= dt;
-    if (player.respawnTimer <= 0) respawnHero(player);
+    if (player.respawnTimer <= 0) respawnPlayer();
   }
 
-  if (enemy.alive) {
-    tickCooldowns(enemy, dt); regen(enemy, dt); surgeTrail(enemy, dt); enemyAutoBuy(enemy);
-    if (enemy.dash) updateDash(enemy, dt);
-    else updateEnemyHero(enemy, { entities, player }, dt, attack, (key, aimPos) => castForHero(enemy, key, aimPos, false));
-  } else {
-    enemy.respawnTimer -= dt;
-    if (enemy.respawnTimer <= 0) respawnHero(enemy);
-  }
+  for (const e of entities) { if (e.attackCd > 0) e.attackCd -= dt; if (e._hitCd > 0) e._hitCd -= dt; if (e.slowT > 0 && e.team === 'enemy') e.slowT -= dt; }
 
   for (const e of entities) {
-    if (!e.alive) continue;
-    if (e.kind === 'creep') updateCreep(e, entities, dt, attack);
-    else if (e.kind === 'tower') updateTower(e, entities, dt, attack);
+    if (!e.alive || e.team !== 'enemy') continue;
+    if (e.isBoss) { updateMob(e, player, dt, attack); updateBossMechanics(e, dt); }
+    else updateMob(e, player, dt, attack);
   }
 
-  updateCamps(dt);
+  updateHazards(dt);
+  updateGroundItems(dt);
   fx.update(dt, entities, applyDamage);
 
   hudTimer -= dt;
-  ui.updateHero(player);
-  ui.updateAbilities(player);
-  ui.drawMinimap(entities, player, WORLD);
+  if (hudTimer <= 0) { ui.updateHud(player, depth); ui.updateAbilities(player); if (boss) ui.updateBossBar(boss); hudTimer = 0.2; }
   ui.updateToast(dt);
-  if (hudTimer <= 0) {
-    ui.updateInventory(player);
-    if (ui.shopOpen) ui.renderShop(ITEMS, player, nearOwnFountain(player));
-    hudTimer = 0.3;
-  }
-
   if (!player.alive) ui.showToast(`Возрождение через ${Math.ceil(player.respawnTimer)}с`, 0.4);
-}
-
-function endGame(playerWon) {
-  gameEnded = true;
-  ui.showGameOver(playerWon);
 }
 
 document.getElementById('restart')?.addEventListener('click', () => location.reload());
@@ -704,22 +570,12 @@ animate();
 
 (async () => {
   const loadingText = document.getElementById('loading-text');
-  try {
-    await preloadHeroes((done, total) => {
-      if (loadingText) loadingText.textContent = `Загрузка моделей… ${done}/${total}`;
-    });
-  } catch (e) {
-    console.error('Не удалось загрузить модели, использую запасные примитивы', e);
-  }
-  try {
-    await preloadNature((done, total) => {
-      if (loadingText) loadingText.textContent = `Загрузка окружения… ${done}/${total}`;
-    });
-  } catch (e) {
-    console.error('Не удалось загрузить модели природы, использую запасные примитивы', e);
-  }
+  try { await preloadHeroes((d, t) => { if (loadingText) loadingText.textContent = `Загрузка моделей… ${d}/${t}`; }); }
+  catch (e) { console.error('Модели не загрузились', e); }
+  try { await preloadNature((d, t) => { if (loadingText) loadingText.textContent = `Загрузка окружения… ${d}/${t}`; }); }
+  catch (e) { console.error('Природа не загрузилась', e); }
   populateScatter(scene);
   const ld = document.getElementById('loading');
   if (ld) ld.style.display = 'none';
-  ui.showHeroSelect(HERO_DEFS, (id) => startGame(id));
+  ui.showClassSelect(HERO_DEFS, (id) => startGame(id));
 })();
