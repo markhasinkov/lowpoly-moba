@@ -27,6 +27,7 @@ const pendingStrikes = [];
 const fireZones = [];
 const traps = [];
 const destructibles = [];
+const mapEvents = [];
 let player = null;
 let boss = null;
 const secretChests = [];
@@ -721,6 +722,7 @@ function clearEnemies() {
   fireZones.length = 0; pendingStrikes.length = 0;
   clearTraps();
   clearDestructibles();
+  clearEvents();
   for (const c of secretChests) scene.remove(c.mesh);
   secretChests.length = 0; secretBoss = null; secretRevealed = false;
   for (const n of npcs) scene.remove(n.mesh);
@@ -891,6 +893,7 @@ function spawnDungeon() {
   spawnNpcs();
   spawnTraps();
   spawnDestructibles();
+  spawnEvents();
   refreshHud();
   setQuestDepth();
 }
@@ -959,6 +962,139 @@ function openChest(c) {
 
 function checkClear() {
   if (mobsAlive <= 0 && !boss) { portalActive = true; player.hp = player.maxHp; player.mana = player.maxMana; player.potions = POTION.max; sfx('portal'); ui.showToast('Глубина зачищена! Портал открыт ↓ (зелья пополнены)', 3); }
+}
+
+// ---------- map events: altar buff, ambush rune, cursed ground ----------
+function buildEvent(kind, x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const parts = {};
+  if (kind === 'altar') {
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 2.0, 1.4, 8),
+      new THREE.MeshStandardMaterial({ color: 0x6a7080, flatShading: true, roughness: 0.9 }));
+    base.position.y = 0.7; base.castShadow = true; g.add(base);
+    const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.7, 0),
+      new THREE.MeshStandardMaterial({ color: 0xffe066, emissive: 0xffcc33, emissiveIntensity: 1.3, flatShading: true }));
+    orb.position.y = 2.4; g.add(orb);
+    parts.orb = orb;
+  } else if (kind === 'ambush') {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(2.4, 0.18, 8, 28),
+      new THREE.MeshStandardMaterial({ color: 0xff4030, emissive: 0xff2010, emissiveIntensity: 1.2, flatShading: true }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.1; g.add(ring);
+    const inner = new THREE.Mesh(new THREE.CircleGeometry(2.3, 20),
+      new THREE.MeshBasicMaterial({ color: 0xff3020, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+    inner.rotation.x = -Math.PI / 2; inner.position.y = 0.08; g.add(inner);
+    parts.ring = ring;
+  } else {
+    const disc = new THREE.Mesh(new THREE.CircleGeometry(10, 36),
+      new THREE.MeshBasicMaterial({ color: 0x3a1a4a, transparent: true, opacity: 0.42, side: THREE.DoubleSide }));
+    disc.rotation.x = -Math.PI / 2; disc.position.y = 0.05; g.add(disc);
+    const shards = [];
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const sh = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.6, 4),
+        new THREE.MeshStandardMaterial({ color: 0x7a3aaa, emissive: 0x4a1a7a, emissiveIntensity: 0.8, flatShading: true }));
+      sh.position.set(Math.cos(a) * 7, 0.8, Math.sin(a) * 7); g.add(sh); shards.push(sh);
+    }
+    parts.disc = disc; parts.shards = shards;
+  }
+  scene.add(g);
+  return { mesh: g, parts };
+}
+
+function applyTempBuff() {
+  const buffs = [
+    { add: { attackDamage: Math.round(player.attackDamage * 0.4) }, msg: '⚔ Алтарь Ярости: +40% урона (25с)', color: '#ff7040' },
+    { add: { moveSpeed: 3, attackSpeed: 0.4 }, msg: '⚡ Алтарь Скорости: +скорость и ск.атаки (20с)', color: '#8fe0ff' },
+    { add: { armor: 15, hpRegen: 20 }, msg: '🛡 Алтарь Защиты: +броня и реген (25с)', color: '#ffd24f' },
+    { add: { lifesteal: 0.15 }, msg: '🩸 Алтарь Крови: +15% вампиризм (25с)', color: '#c86bff' },
+  ];
+  const b = buffs[(Math.random() * buffs.length) | 0];
+  const dur = b.add.attackSpeed ? 20 : 25;
+  for (const k in b.add) player[k] = (player[k] || 0) + b.add[k];
+  player._tempBuffs = player._tempBuffs || [];
+  player._tempBuffs.push({ add: b.add, t: dur });
+  player.buffE = Math.max(player.buffE || 0, dur);
+  fx.spawnCastFlash(player.pos, 0xffe066); sfx('level');
+  ui.showToast(b.msg, 2.8, b.color); refreshHud();
+}
+
+function tickTempBuffs(dt) {
+  if (!player._tempBuffs) return;
+  for (let i = player._tempBuffs.length - 1; i >= 0; i--) {
+    const b = player._tempBuffs[i]; b.t -= dt;
+    if (b.t <= 0) {
+      for (const k in b.add) player[k] = (player[k] || 0) - b.add[k];
+      player._tempBuffs.splice(i, 1);
+      ui.showToast('Благословение иссякло', 1.4); refreshHud();
+    }
+  }
+}
+
+function triggerAmbush(ev) {
+  const biome = biomeForDepth(depth);
+  const pool = BIOME_MOBS[biome.id] || MOB_TYPES.map((t) => t.id);
+  const n = 4 + ((Math.random() * 3) | 0);
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const ex = ev.pos.x + Math.cos(a) * 4, ez = ev.pos.z + Math.sin(a) * 4;
+    const grade = (i === 0 && Math.random() < 0.5) ? 'elite' : 'trash';
+    const type = MOB_BY_ID[pool[(Math.random() * pool.length) | 0]] || MOB_TYPES[0];
+    const spec = mobSpec(type, grade, ex, ez);
+    add(createMob(spec)); mobsAlive++;
+  }
+  portalActive = false;
+  fx.spawnCastFlash(ev.pos, 0xff3020); sfx('boss');
+  ui.showToast('⚠ Засада! Портал закрыт, пока не зачистишь.', 3, '#ff5040');
+}
+
+function spawnEvents() {
+  const place = (kind, minDist) => {
+    for (let tries = 0; tries < 12; tries++) {
+      const a = Math.random() * Math.PI * 2;
+      const maxR = arenaRadiusAt(a);
+      const dist = (0.3 + Math.random() * 0.45) * maxR;
+      const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
+      if (Math.hypot(x, z) < minDist) continue;
+      if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 12) continue;
+      const built = buildEvent(kind, x, z);
+      mapEvents.push({ kind, mesh: built.mesh, parts: built.parts, pos: new THREE.Vector3(x, 0, z), done: false, tick: 0 });
+      return true;
+    }
+    return false;
+  };
+  if (Math.random() < 0.45) place('altar', 16);
+  if (Math.random() < 0.4) place('ambush', 18);
+  if (Math.random() < 0.3) { if (place('cursed', 20)) { const ev = mapEvents[mapEvents.length - 1]; spawnChest(ev.pos.x, ev.pos.z); } }
+}
+
+function updateEvents(dt) {
+  for (const ev of mapEvents) {
+    if (ev.kind === 'altar') {
+      if (ev.parts.orb) { ev.parts.orb.rotation.y += dt * 1.5; ev.parts.orb.position.y = 2.4 + Math.sin(matchTime * 2) * 0.15; }
+      if (!ev.done && player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < 4.5) {
+        ev.done = true; applyTempBuff();
+        if (ev.parts.orb) { ev.parts.orb.material.emissiveIntensity = 0.12; ev.parts.orb.material.color.setHex(0x555a66); }
+      }
+    } else if (ev.kind === 'ambush') {
+      if (ev.parts.ring) ev.parts.ring.rotation.z += dt * 1.2;
+      if (!ev.done && player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < 7) {
+        ev.done = true; triggerAmbush(ev); scene.remove(ev.mesh);
+      }
+    } else {
+      if (ev.parts.shards) for (const sh of ev.parts.shards) sh.rotation.y += dt * 0.8;
+      ev.tick -= dt;
+      if (player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < 10) {
+        player.slowT = Math.max(player.slowT || 0, 0.4); player.slowFactor = 0.72;
+        if (ev.tick <= 0) { applyDamage(player, Math.round(6 + depth * 2), null); fx.spawnHit(player.pos, 0x7a3aaa); ev.tick = 0.6; }
+      }
+    }
+  }
+}
+
+function clearEvents() {
+  for (const ev of mapEvents) scene.remove(ev.mesh);
+  mapEvents.length = 0;
 }
 
 // ---------- floaters (DOM damage numbers) ----------
@@ -1118,7 +1254,7 @@ function animate() {
   }
   updateFloaters(dt);
   if (started) updateCamera(dt);
-  if (started && player) ui.updateMinimap(player, entities, WORLD.portal, npcs, WORLD.shape, WORLD.radius, traps);
+  if (started && player) ui.updateMinimap(player, entities, WORLD.portal, npcs, WORLD.shape, WORLD.radius, traps, mapEvents);
   else { camera.position.set(Math.sin(matchTime * 0.15) * 70, 60, Math.cos(matchTime * 0.15) * 70); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
 }
@@ -1148,6 +1284,8 @@ function update(dt) {
   updateHazards(dt);
   updateTraps(dt);
   updateDestructibles(dt);
+  updateEvents(dt);
+  tickTempBuffs(dt);
   updateGroundItems(dt);
   updateSecrets(dt);
   updateNpcs(dt);

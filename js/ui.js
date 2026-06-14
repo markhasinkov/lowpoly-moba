@@ -252,7 +252,7 @@ export class UI {
     go.querySelector('h1').textContent = win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ';
   }
 
-  updateMinimap(player, entities, portal, npcs, shape, radius, traps) {
+  updateMinimap(player, entities, portal, npcs, shape, radius, traps, events) {
     const ctx = this.miniCtx;
     if (!ctx || !player) return;
     const W = this.minimap.width, H = this.minimap.height;
@@ -290,6 +290,14 @@ export class UI {
       ctx.save(); ctx.translate(tx, tz); ctx.rotate(Math.PI / 4);
       ctx.fillStyle = col; ctx.fillRect(-2.2, -2.2, 4.4, 4.4);
       ctx.restore();
+    }
+
+    // map events
+    if (events) for (const ev of events) {
+      const ex = toX(ev.pos.x), ez = toY(ev.pos.z);
+      if (ev.kind === 'cursed') { ctx.beginPath(); ctx.strokeStyle = 'rgba(150,90,200,0.85)'; ctx.lineWidth = 1.5; ctx.arc(ex, ez, 10 * sc, 0, Math.PI * 2); ctx.stroke(); }
+      else if (ev.kind === 'altar') { ctx.beginPath(); ctx.fillStyle = ev.done ? '#666' : '#ffe066'; ctx.arc(ex, ez, 3.2, 0, Math.PI * 2); ctx.fill(); }
+      else if (ev.kind === 'ambush' && !ev.done) { ctx.beginPath(); ctx.strokeStyle = '#ff4030'; ctx.lineWidth = 1.6; ctx.arc(ex, ez, 3.5, 0, Math.PI * 2); ctx.stroke(); }
     }
 
     // enemies
