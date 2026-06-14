@@ -26,6 +26,7 @@ const groundItems = [];
 const pendingStrikes = [];
 const fireZones = [];
 const traps = [];
+const destructibles = [];
 let player = null;
 let boss = null;
 const secretChests = [];
@@ -238,6 +239,7 @@ function manualAttack() {
   if (player.dash) return;
   const t = nearestEnemy(player.pos, player.attackRange * 1.3);
   if (t) { player.mesh.rotation.y = Math.atan2(t.pos.x - player.pos.x, t.pos.z - player.pos.z); attack(player, t); }
+  else if (player.attackCd <= 0 && hitDestructibleMelee(player.pos, player.attackRange * 1.3, player.attackDamage)) { player.attackCd = 1 / player.attackSpeed; if (player.isGLTF) playHeroAnim(player, 'attack', Math.min(0.7, 1 / player.attackSpeed)); sfx('attack'); }
 }
 
 function applyDamage(target, amount, attacker) {
@@ -448,6 +450,7 @@ function resolveStrike(st) {
       if (st.slow) { e.slowT = st.slow.dur; e.slowFactor = st.slow.factor; }
     }
   }
+  if (st.target !== 'player') damageDestructiblesRadius(st.pos, st.radius, st.damage);
 }
 function spawnFireZone(pos, r, dur, dps) {
   const disc = new THREE.Mesh(new THREE.CircleGeometry(r, 20),
@@ -579,6 +582,110 @@ function clearTraps() {
   traps.length = 0;
 }
 
+// ---------- destructible objects ----------
+function buildDestructible(type, x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  let flashParts = [];
+  if (type === 'barrel') {
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(1.0, 1.1, 2.2, 12),
+      new THREE.MeshStandardMaterial({ color: 0x7a4a26, flatShading: true, roughness: 0.85 }));
+    body.position.y = 1.1; body.castShadow = true; g.add(body);
+    for (const yy of [0.5, 1.1, 1.7]) {
+      const hoop = new THREE.Mesh(new THREE.TorusGeometry(1.06, 0.07, 6, 14),
+        new THREE.MeshStandardMaterial({ color: 0x444a52, flatShading: true, metalness: 0.4 }));
+      hoop.rotation.x = Math.PI / 2; hoop.position.y = yy; g.add(hoop);
+    }
+    flashParts = [body];
+  } else if (type === 'crate') {
+    const box = new THREE.Mesh(new THREE.BoxGeometry(2, 2, 2),
+      new THREE.MeshStandardMaterial({ color: 0x9a6a36, flatShading: true, roughness: 0.9 }));
+    box.position.y = 1; box.castShadow = true; g.add(box);
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(2.06, 0.3, 2.06),
+      new THREE.MeshStandardMaterial({ color: 0x6e4a24, flatShading: true }));
+    slat.position.y = 1; g.add(slat);
+    flashParts = [box];
+  } else {
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(1.3, 0),
+      new THREE.MeshStandardMaterial({ color: 0x8f6bff, emissive: 0x6b3bff, emissiveIntensity: 0.9, flatShading: true, transparent: true, opacity: 0.9 }));
+    crystal.position.y = 1.5; crystal.castShadow = true; g.add(crystal);
+    flashParts = [crystal];
+  }
+  scene.add(g);
+  return { mesh: g, flashParts };
+}
+
+function spawnDestructibles() {
+  const count = Math.min(10, 4 + Math.floor(depth / 2));
+  const types = ['barrel', 'crate', 'crate', 'crystal'];
+  const hp = Math.round(40 + depth * 12);
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const maxR = arenaRadiusAt(a);
+    const dist = (0.2 + Math.random() * 0.62) * maxR;
+    const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
+    if (Math.hypot(x, z) < 10) continue;
+    if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 8) continue;
+    const type = types[(Math.random() * types.length) | 0];
+    const built = buildDestructible(type, x, z);
+    destructibles.push({ type, mesh: built.mesh, flashParts: built.flashParts, pos: new THREE.Vector3(x, 0, z), hp, maxHp: hp, radius: type === 'crate' ? 1.5 : 1.3, flashT: 0, spin: type === 'crystal' });
+  }
+}
+
+function breakDestructible(d) {
+  const col = d.type === 'crystal' ? 0x8f6bff : 0xc89a5a;
+  fx.spawnImpact(d.pos, col); fx.spawnCastFlash(d.pos, col);
+  sfx('death');
+  const goldBase = d.type === 'crystal' ? 30 : 12;
+  const gold = Math.round((goldBase + Math.random() * goldBase) * (1 + depth * 0.15));
+  player.gold += gold;
+  const dropChance = d.type === 'crystal' ? 0.6 : 0.22;
+  const bonus = d.type === 'crystal' ? 1 : 0;
+  const item = rollDrop(dropChance, depth, bonus, null);
+  if (item) { spawnGroundItem(item, d.pos); if (item.rarity === 'legendary') questProgress('legend'); }
+  scene.remove(d.mesh);
+  const i = destructibles.indexOf(d); if (i >= 0) destructibles.splice(i, 1);
+}
+
+function damageDestructible(d, dmg) {
+  d.hp -= dmg; d.flashT = 0.16;
+  spawnDamageNumber(d.pos, dmg, 'player');
+  if (d.hp <= 0) breakDestructible(d);
+}
+
+// hit nearest destructible in range (basic attack); returns true if one was hit
+function hitDestructibleMelee(pos, range, dmg) {
+  let best = null, bd = range;
+  for (const d of destructibles) {
+    const dd = Math.hypot(d.pos.x - pos.x, d.pos.z - pos.z);
+    if (dd < bd) { bd = dd; best = d; }
+  }
+  if (best) { damageDestructible(best, dmg); fx.spawnHit(best.pos, 0xbfe6ff); return true; }
+  return false;
+}
+
+function damageDestructiblesRadius(pos, r, dmg) {
+  for (let i = destructibles.length - 1; i >= 0; i--) {
+    const d = destructibles[i];
+    if (Math.hypot(d.pos.x - pos.x, d.pos.z - pos.z) <= r) damageDestructible(d, dmg);
+  }
+}
+
+function updateDestructibles(dt) {
+  for (const d of destructibles) {
+    if (d.spin) d.mesh.children[0].rotation.y += dt * 1.4;
+    if (d.flashT > 0) {
+      d.flashT -= dt; const k = Math.max(0, d.flashT / 0.16);
+      for (const p of d.flashParts) if (p.material && p.material.emissive) p.material.emissive.setRGB(k, k, k);
+    }
+  }
+}
+
+function clearDestructibles() {
+  for (const d of destructibles) scene.remove(d.mesh);
+  destructibles.length = 0;
+}
+
 // ---------- boss mechanics ----------
 function updateBossMechanics(b, dt) {
   b._mt = (b._mt || 0) + dt;
@@ -613,6 +720,7 @@ function clearEnemies() {
   for (const fzz of fireZones) scene.remove(fzz.mesh);
   fireZones.length = 0; pendingStrikes.length = 0;
   clearTraps();
+  clearDestructibles();
   for (const c of secretChests) scene.remove(c.mesh);
   secretChests.length = 0; secretBoss = null; secretRevealed = false;
   for (const n of npcs) scene.remove(n.mesh);
@@ -782,6 +890,7 @@ function spawnDungeon() {
   maybeSpawnSecrets();
   spawnNpcs();
   spawnTraps();
+  spawnDestructibles();
   refreshHud();
   setQuestDepth();
 }
@@ -1038,6 +1147,7 @@ function update(dt) {
 
   updateHazards(dt);
   updateTraps(dt);
+  updateDestructibles(dt);
   updateGroundItems(dt);
   updateSecrets(dt);
   updateNpcs(dt);
