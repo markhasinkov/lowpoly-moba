@@ -399,3 +399,11 @@ export const BIOME_MOBS = {
 
 // chance per depth for secret content
 export const SECRET = { bossChance: 0.3, chestChance: 0.45 };
+
+// ===== Legendary weapon enchants — extra on-hit ability =====
+export const ENCHANTS = [
+  { id: 'lightning', name: 'Цепная молния', desc: '30% при ударе: молния по 2 врагам рядом' },
+  { id: 'cleave',    name: 'Рассечение', desc: 'При ударе: 40% урона врагам вокруг цели' },
+  { id: 'execute',   name: 'Казнь', desc: '+50% урона по врагам ниже 25% HP' },
+  { id: 'frost',     name: 'Лютый холод', desc: '30% при ударе: заморозка цели' },
+];

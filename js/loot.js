@@ -1,5 +1,5 @@
 // ===== Loot generation: bases + rarity + affixes =====
-import { ITEM_BASES, AFFIXES, RARITY, UNIQUES } from './config.js';
+import { ITEM_BASES, AFFIXES, RARITY, UNIQUES, ENCHANTS } from './config.js';
 
 let _uid = 1;
 
@@ -15,21 +15,23 @@ export function rarityById(id) { return RARITY.find(r => r.id === id) || RARITY[
 export function rarityIndex(id) { return RARITY.findIndex(r => r.id === id); }
 
 // Generate an item. minRarityId forces at least that grade (for boss drops).
-export function generateItem(ilvl, rng = Math.random, rarityBonus = 0, minRarityId = null) {
-  const baseT = ITEM_BASES[(rng() * ITEM_BASES.length) | 0];
-  let rarity = rollRarity(rarityBonus, rng);
-  if (minRarityId) {
-    const minIdx = rarityIndex(minRarityId);
-    if (rarityIndex(rarity.id) < minIdx) rarity = RARITY[minIdx];
+function pickEnchant(rng) {
+  const e = ENCHANTS[(rng() * ENCHANTS.length) | 0];
+  return { id: e.id, name: e.name, desc: e.desc };
+}
+
+function tidy(stats) {
+  for (const k of Object.keys(stats)) {
+    if (['attackDamage', 'maxHp', 'armor', 'maxMana'].includes(k)) stats[k] = Math.round(stats[k]);
+    else stats[k] = Math.round(stats[k] * 1000) / 1000;
   }
-  if (rarity.id === 'legendary' && UNIQUES.length && rng() < 0.5) {
-    return buildUnique(UNIQUES[(rng() * UNIQUES.length) | 0], ilvl);
-  }
+}
+
+function buildItem(baseT, ilvl, rarity, rng) {
   const stats = {};
   const add = (k, v) => { stats[k] = (stats[k] || 0) + v; };
   for (const [k, v] of Object.entries(baseT.base || {})) add(k, v);
   for (const [k, v] of Object.entries(baseT.perLevel || {})) add(k, v * ilvl);
-
   const affixes = [];
   const pool = AFFIXES.slice();
   for (let i = 0; i < rarity.affixes && pool.length; i++) {
@@ -42,26 +44,45 @@ export function generateItem(ilvl, rng = Math.random, rarityBonus = 0, minRarity
     add(key, val);
     affixes.push({ id: a.id, label: a.label.replace('{v}', step < 1 ? disp.toFixed(1) : disp) });
   }
-
-  // tidy flat stats for clean tooltips
-  for (const k of Object.keys(stats)) {
-    if (['attackDamage', 'maxHp', 'armor', 'maxMana'].includes(k)) stats[k] = Math.round(stats[k]);
-    else stats[k] = Math.round(stats[k] * 1000) / 1000;
-  }
-
-  return {
-    uid: _uid++,
-    slot: baseT.slot,
-    icon: baseT.icon,
-    rarity: rarity.id,
-    rarityName: rarity.name,
-    color: rarity.color,
-    hex: rarity.hex,
-    ilvl,
-    stats,
-    affixes,
+  tidy(stats);
+  const item = {
+    uid: _uid++, slot: baseT.slot, icon: baseT.icon, base: baseT.name,
+    rarity: rarity.id, rarityName: rarity.name, color: rarity.color, hex: rarity.hex,
+    ilvl, stats, affixes,
     name: (rarity.id === 'common' ? '' : rarity.name + ' ') + baseT.name,
   };
+  if (rarity.id === 'legendary' && baseT.slot === 'weapon') item.enchant = pickEnchant(rng);
+  return item;
+}
+
+// Generate an item. minRarityId forces at least that grade (for boss drops).
+export function generateItem(ilvl, rng = Math.random, rarityBonus = 0, minRarityId = null) {
+  const baseT = ITEM_BASES[(rng() * ITEM_BASES.length) | 0];
+  let rarity = rollRarity(rarityBonus, rng);
+  if (minRarityId) {
+    const minIdx = rarityIndex(minRarityId);
+    if (rarityIndex(rarity.id) < minIdx) rarity = RARITY[minIdx];
+  }
+  if (rarity.id === 'legendary' && UNIQUES.length && rng() < 0.5) {
+    return buildUnique(UNIQUES[(rng() * UNIQUES.length) | 0], ilvl);
+  }
+  return buildItem(baseT, ilvl, rarity, rng);
+}
+
+// Combine 3 identical items (same base + rarity) into one of the next rarity tier.
+export function nextRarityId(id) {
+  const order = ['common', 'rare', 'magic', 'epic', 'legendary'];
+  const i = order.indexOf(id);
+  return (i < 0 || i >= order.length - 1) ? null : order[i + 1];
+}
+export function combineUpgrade(items, rng = Math.random) {
+  if (!items || items.length < 3) return null;
+  const nextId = nextRarityId(items[0].rarity);
+  if (!nextId) return null;
+  const baseName = items[0].base;
+  const baseT = ITEM_BASES.find((b) => b.name === baseName) || ITEM_BASES.find((b) => b.slot === items[0].slot) || ITEM_BASES[0];
+  const ilvl = Math.max(...items.map((i) => i.ilvl || 1)) + 1;
+  return buildItem(baseT, ilvl, rarityById(nextId), rng);
 }
 
 function buildUnique(u, ilvl) {
@@ -69,14 +90,13 @@ function buildUnique(u, ilvl) {
   const add = (k, v) => { stats[k] = (stats[k] || 0) + v; };
   for (const [k, v] of Object.entries(u.base || {})) add(k, v);
   for (const [k, v] of Object.entries(u.perLevel || {})) add(k, v * ilvl);
-  for (const k of Object.keys(stats)) {
-    if (['attackDamage', 'maxHp', 'armor', 'maxMana'].includes(k)) stats[k] = Math.round(stats[k]);
-    else stats[k] = Math.round(stats[k] * 1000) / 1000;
-  }
-  return {
-    uid: _uid++, slot: u.slot, icon: u.icon, rarity: 'unique', rarityName: 'Уникальный',
+  tidy(stats);
+  const item = {
+    uid: _uid++, slot: u.slot, icon: u.icon, base: u.name, rarity: 'unique', rarityName: 'Уникальный',
     color: '#ff5e7a', hex: 0xff5e7a, ilvl, stats, affixes: [], unique: true, name: u.name,
   };
+  if (u.slot === 'weapon') item.enchant = pickEnchant(Math.random);
+  return item;
 }
 
 // Roll a possible drop. Returns item or null.

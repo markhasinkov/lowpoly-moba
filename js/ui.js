@@ -30,7 +30,7 @@ export class UI {
     this._shopOpen = false;
     this._forgeOpen = false;
     this.npcPrompt = document.getElementById('npc-prompt');
-    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {}, onSell: () => {}, isUpgrade: () => false, onSharpen: () => {} };
+    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {}, onSell: () => {}, isUpgrade: () => false, onSharpen: () => {}, onCombine: () => {} };
     for (const k of ['Q', 'W', 'E', 'R']) {
       const btn = this.abilityEls[k] && this.abilityEls[k].querySelector('.levelup');
       if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevelAbility(k); });
@@ -111,10 +111,25 @@ export class UI {
       const max = lvl >= 10;
       html += `<div class="shop-item" data-sharp="${i}" style="--rc:${w.it.color}"><span>${w.it.icon} ${w.it.name} <span class="forge-where">(${w.where}, урон ${Math.round(w.it.stats.attackDamage || 0)})</span></span><span class="si-cost">${max ? 'МАКС' : cost + '💰'}</span></div>`;
     });
+    const groups = {};
+    p.inventory.forEach((it) => {
+      if (it.unique || !['common', 'rare', 'magic', 'epic'].includes(it.rarity)) return;
+      const key = it.base + '|' + it.rarity;
+      (groups[key] = groups[key] || []).push(it);
+    });
+    const combos = Object.entries(groups).filter(([, arr]) => arr.length >= 3);
+    if (combos.length) {
+      html += '<div class="forge-hint" style="margin-top:8px">⚒ Ковка: 3 одинаковых → ранг выше (до легендарки с умением)</div>';
+      combos.forEach(([key, arr]) => {
+        const it = arr[0];
+        html += `<div class="shop-item" data-combine="${key}" style="--rc:${it.color}"><span>⚒ ${it.icon} 3× ${it.rarityName} ${it.base}</span><span class="si-cost">${arr.length} шт</span></div>`;
+      });
+    }
     html += '<div class="inv-hint">F — закрыть</div>';
     el.innerHTML = html;
     const list = weapons.map(w => w.it);
     el.querySelectorAll('[data-sharp]').forEach(b => b.addEventListener('click', () => { const it = list[parseInt(b.dataset.sharp, 10)]; if (it) this.callbacks.onSharpen(it); }));
+    el.querySelectorAll('[data-combine]').forEach(b => b.addEventListener('click', () => this.callbacks.onCombine(b.dataset.combine)));
   }
   showNpcPrompt(text) { const el = this.npcPrompt || document.getElementById('npc-prompt'); if (!el) return; el.textContent = text; el.style.display = 'block'; }
   hideNpcPrompt() { const el = this.npcPrompt || document.getElementById('npc-prompt'); if (el) el.style.display = 'none'; }
@@ -171,7 +186,8 @@ export class UI {
   _itemTip(it) {
     const lines = statLines(it.stats).join('\n');
     const affs = it.affixes && it.affixes.length ? '\n' + it.affixes.map(a => a.label).join('\n') : '';
-    return `${it.name} (ур.${it.ilvl})\n${lines}${affs}`;
+    const ench = it.enchant ? `\n⚡ ${it.enchant.name}: ${it.enchant.desc}` : '';
+    return `${it.name} (ур.${it.ilvl})\n${lines}${affs}${ench}`;
   }
   refreshInventory(p) {
     if (!this.equipGrid) return;

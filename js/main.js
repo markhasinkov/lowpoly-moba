@@ -10,7 +10,7 @@ import {
   HERO_RESPAWN, xpForLevel, MOB_TYPES, MOB_GRADES, bossForDepth, DUNGEON, GRADE_COLOR,
   biomeForDepth, BIOMES, SECRET, BOSSES,
 } from './config.js';
-import { generateItem, rollDrop, rarityById } from './loot.js';
+import { generateItem, rollDrop, rarityById, combineUpgrade } from './loot.js';
 import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
 import { POTION, SHOP_GEAR } from './config.js';
 import { TALENTS, TALENT_LEVELS, CLASS_TALENTS, BIOME_MOBS, MOB_BY_ID } from './config.js';
@@ -145,6 +145,8 @@ function attack(attacker, target) {
   let dmg = attacker.attackDamage;
   const isCrit = (attacker.critChance || 0) > 0 && Math.random() < attacker.critChance;
   if (isCrit) dmg *= (attacker.critMult || 1.8);
+  const _ench = (attacker === player && player.equipment && player.equipment.weapon) ? player.equipment.weapon.enchant : null;
+  if (_ench && _ench.id === 'execute' && target.maxHp && target.hp / target.maxHp < 0.25) dmg *= 1.5;
   const col = attacker.team === 'player' ? 0x8fd0ff : 0xffb088;
   sfx(isCrit ? 'crit' : 'attack');
   if (attacker.attackType === 'ranged') {
@@ -156,6 +158,42 @@ function attack(attacker, target) {
   if (isCrit) fx.spawnImpact(target.pos, 0xffe066);
   if ((attacker.lifesteal || 0) > 0 && attacker.alive) attacker.hp = Math.min(attacker.maxHp, attacker.hp + dmg * attacker.lifesteal);
   if (attacker.team === 'enemy' && target === player && attacker.status) applyStatus(player, attacker.status, attacker.attackDamage);
+  if (_ench) applyEnchant(_ench, target, dmg);
+}
+
+function applyEnchant(ench, target, dmg) {
+  if (!target) return;
+  if (ench.id === 'frost') {
+    if (Math.random() < 0.3) { target.slowT = Math.max(target.slowT || 0, 2); target.slowFactor = 0.5; fx.spawnHit(target.pos, 0x8fd6ff); }
+  } else if (ench.id === 'cleave') {
+    for (const e of entities) if (e.alive && e.team === 'enemy' && e !== target && Math.hypot(e.pos.x - target.pos.x, e.pos.z - target.pos.z) < 6) applyDamage(e, dmg * 0.4, player);
+    fx.spawnImpact(target.pos, 0xffb04f);
+  } else if (ench.id === 'lightning') {
+    if (Math.random() < 0.3) {
+      let hits = 0;
+      for (const e of entities) {
+        if (hits >= 2) break;
+        if (e.alive && e.team === 'enemy' && e !== target && Math.hypot(e.pos.x - target.pos.x, e.pos.z - target.pos.z) < 14) { applyDamage(e, dmg * 0.6, player); fx.spawnHit(e.pos, 0x8fd0ff); hits++; }
+      }
+    }
+  }
+}
+
+function combineGroup(key) {
+  const sep = key.lastIndexOf('|');
+  const base = key.slice(0, sep), rarity = key.slice(sep + 1);
+  const matches = player.inventory.filter((it) => !it.unique && it.base === base && it.rarity === rarity);
+  if (matches.length < 3) { ui.showToast('Нужно 3 одинаковых предмета', 1.2); return; }
+  const three = matches.slice(0, 3);
+  const result = combineUpgrade(three);
+  if (!result) { ui.showToast('Нельзя сковать выше', 1.2); return; }
+  for (const it of three) { const i = player.inventory.indexOf(it); if (i >= 0) player.inventory.splice(i, 1); }
+  addToInventory(player, result);
+  sfx('level'); fx.spawnCastFlash(player.pos, 0xffaa33);
+  const e = result.enchant ? ` ⚡${result.enchant.name}` : '';
+  ui.showToast(`Сковано: ${result.name}${e}`, 2.6, result.color);
+  ui.renderForge(player, depth); refreshHud();
+  if (ui.isInventoryOpen()) ui.refreshInventory(player);
 }
 
 function applyStatus(p, kind, base) {
@@ -826,6 +864,7 @@ function startGame(defId) {
     onSell: (item) => sellItem(item),
     isUpgrade: (item) => isUpgrade(player, item),
     onSharpen: (item) => sharpenItem(item),
+    onCombine: (key) => combineGroup(key),
   };
   depth = 1;
   initAudio(); resumeAudio(); initQuests();
