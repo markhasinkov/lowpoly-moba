@@ -552,7 +552,6 @@ function handleMovement(dt) {
     clampArena(player.pos);
     const heading = Math.atan2(mv.x, mv.z);
     player.mesh.rotation.y = heading;
-    if (!turning) camYaw = lerpAngle(camYaw, heading, 1 - Math.pow(0.0009, dt));
     player.moving = true;
   } else {
     player.moving = false;
