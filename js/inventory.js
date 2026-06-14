@@ -38,7 +38,7 @@ export function recomputeStats(player) {
   player.maxMana = Math.round(b.maxMana + lv * GROW.maxMana + (t.maxMana || 0));
   player.attackDamage = Math.round(b.attackDamage + lv * GROW.attackDamage + (t.attackDamage || 0));
   player.armor = Math.round((b.armor + lv * GROW.armor + (t.armor || 0)) * 10) / 10;
-  player.hpRegen = b.hpRegen;
+  player.hpRegen = b.hpRegen + (t.hpRegen || 0);
   player.manaRegen = b.manaRegen + (t.manaRegen || 0);
   player.baseMoveSpeed = b.moveSpeed + (t.moveSpeed || 0);
   if (!(player.buffE > 0)) player.moveSpeed = player.baseMoveSpeed;

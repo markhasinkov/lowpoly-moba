@@ -1,5 +1,5 @@
 // ===== Loot generation: bases + rarity + affixes =====
-import { ITEM_BASES, AFFIXES, RARITY } from './config.js';
+import { ITEM_BASES, AFFIXES, RARITY, UNIQUES } from './config.js';
 
 let _uid = 1;
 
@@ -21,6 +21,9 @@ export function generateItem(ilvl, rng = Math.random, rarityBonus = 0, minRarity
   if (minRarityId) {
     const minIdx = rarityIndex(minRarityId);
     if (rarityIndex(rarity.id) < minIdx) rarity = RARITY[minIdx];
+  }
+  if (rarity.id === 'legendary' && UNIQUES.length && rng() < 0.5) {
+    return buildUnique(UNIQUES[(rng() * UNIQUES.length) | 0], ilvl);
   }
   const stats = {};
   const add = (k, v) => { stats[k] = (stats[k] || 0) + v; };
@@ -61,6 +64,21 @@ export function generateItem(ilvl, rng = Math.random, rarityBonus = 0, minRarity
   };
 }
 
+function buildUnique(u, ilvl) {
+  const stats = {};
+  const add = (k, v) => { stats[k] = (stats[k] || 0) + v; };
+  for (const [k, v] of Object.entries(u.base || {})) add(k, v);
+  for (const [k, v] of Object.entries(u.perLevel || {})) add(k, v * ilvl);
+  for (const k of Object.keys(stats)) {
+    if (['attackDamage', 'maxHp', 'armor', 'maxMana'].includes(k)) stats[k] = Math.round(stats[k]);
+    else stats[k] = Math.round(stats[k] * 1000) / 1000;
+  }
+  return {
+    uid: _uid++, slot: u.slot, icon: u.icon, rarity: 'unique', rarityName: 'Уникальный',
+    color: '#ff5e7a', hex: 0xff5e7a, ilvl, stats, affixes: [], unique: true, name: u.name,
+  };
+}
+
 // Roll a possible drop. Returns item or null.
 export function rollDrop(dropChance, ilvl, rarityBonus = 0, minRarityId = null, rng = Math.random) {
   if (!minRarityId && rng() > dropChance) return null;
@@ -74,6 +92,7 @@ const STAT_LABEL = {
   armor: (v) => `+${Math.round(v)} броня`,
   maxMana: (v) => `+${Math.round(v)} мана`,
   manaRegen: (v) => `+${v.toFixed(1)} реген маны`,
+  hpRegen: (v) => `+${v.toFixed(1)} реген HP`,
   moveSpeed: (v) => `+${v.toFixed(1)} скорость`,
   critChance: (v) => `+${Math.round(v * 100)}% крит`,
   critMult: (v) => `+${Math.round(v * 100)}% урон крита`,

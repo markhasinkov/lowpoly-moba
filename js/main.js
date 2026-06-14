@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { createScene, populateScatter } from './scene.js';
+import { createScene } from './scene.js';
 import { createHero, createMob, animateEntityVisual, playHeroAnim } from './entities.js';
 import { EffectSystem } from './abilities.js';
 import { updateMob, moveToward } from './ai.js';
@@ -8,11 +8,12 @@ import { preloadHeroes, preloadNature, heroAssets } from './assets.js';
 import {
   HERO_DEFS, getHeroDef, WORLD, scaleAbility, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, MAX_LEVEL,
   HERO_RESPAWN, xpForLevel, MOB_TYPES, MOB_GRADES, bossForDepth, DUNGEON, GRADE_COLOR,
+  biomeForDepth, BIOMES, SECRET, BOSSES,
 } from './config.js';
 import { generateItem, rollDrop, rarityById } from './loot.js';
 import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
 import { POTION, SHOP_GEAR } from './config.js';
-import { TALENTS, TALENT_LEVELS } from './config.js';
+import { TALENTS, TALENT_LEVELS, CLASS_TALENTS, BIOME_MOBS, MOB_BY_ID } from './config.js';
 import { initAudio, resumeAudio, sfx } from './audio.js';
 
 const { scene, renderer, camera } = createScene();
@@ -25,6 +26,8 @@ const pendingStrikes = [];
 const fireZones = [];
 let player = null;
 let boss = null;
+const secretChests = [];
+let secretBoss = null, secretRevealed = false;
 let quests = [];
 let depth = 1, mobsAlive = 0, portalActive = false;
 let started = false, gameEnded = false, matchTime = 0, hudTimer = 0;
@@ -114,11 +117,11 @@ function grantXp(amount) {
 function maybeOpenTalent() {
   if (paused || talentQueue.length === 0 || !player || !player.alive) return;
   talentQueue.shift();
-  const pool = TALENTS.slice();
-  const opts = [];
-  for (let i = 0; i < 3 && pool.length; i++) opts.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+  const tree = CLASS_TALENTS[player.defId] || CLASS_TALENTS.guardian;
+  const ti = Math.min(player.talents.length, tree.length - 1);
+  const tier = tree[ti];
   paused = true;
-  ui.showTalentChoice(opts, (t) => pickTalent(t));
+  ui.showTalentChoice(tier.options, (t) => pickTalent(t), `${getHeroDef(player.defId).name} · ступень ${ti + 1}/${tree.length} · ${tier.name}`);
 }
 function pickTalent(t) {
   for (const [k, v] of Object.entries(t.stats)) player.talentStats[k] = (player.talentStats[k] || 0) + v;
@@ -193,7 +196,10 @@ function onKill(victim, killer) {
     if (victim.grade && victim.grade !== 'trash') questProgress('champ');
     if (victim.isBoss) questProgress('boss');
     victim.dying = true; victim.deathT = 0;
-    if (victim.isBoss) { boss = null; ui.updateBossBar(null); }
+    if (victim.isBoss) {
+      if (victim === boss) { boss = null; ui.updateBossBar(null); }
+      if (victim === secretBoss) { secretBoss = null; ui.showToast('Тайный босс повержен!', 2.6, 0xffcc44); }
+    }
     else mobsAlive = Math.max(0, mobsAlive - 1);
     checkClear();
     refreshHud();
@@ -416,6 +422,8 @@ function clearEnemies() {
   for (let i = entities.length - 1; i >= 0; i--) if (entities[i].team === 'enemy') removeEntity(entities[i]);
   for (const fzz of fireZones) scene.remove(fzz.mesh);
   fireZones.length = 0; pendingStrikes.length = 0;
+  for (const c of secretChests) scene.remove(c.mesh);
+  secretChests.length = 0; secretBoss = null; secretRevealed = false;
 }
 
 function mobSpec(type, grade, x, z) {
@@ -429,7 +437,7 @@ function mobSpec(type, grade, x, z) {
     attackDamage: Math.round(type.attackDamage * g.dmgMul * dmgScale),
     attackRange: type.attackRange, attackSpeed: type.attackSpeed,
     armor: type.armor + depth * 0.4, moveSpeed: type.moveSpeed, attackType: type.attackType,
-    scale: g.scale, tint: g.tint,
+    scale: (type.scale || 1) * g.scale, tint: g.tint || type.tint,
     name: (g.name ? g.name + ' ' : '') + type.name,
     xp: Math.round(type.xp * (g.hpMul * 0.5 + 0.5)), gold: Math.round(type.gold * (g.hpMul * 0.5 + 0.5)),
     dropChance: g.dropChance, rarityBonus: g.rarityBonus, itemLevel: depth,
@@ -446,9 +454,22 @@ function bossSpec(b, x, z) {
   };
 }
 
+function sellItem(item) {
+  const idx = player.inventory.indexOf(item);
+  if (idx < 0) return;
+  const vals = { common: 20, rare: 45, magic: 90, epic: 180, legendary: 360, unique: 500 };
+  const gold = Math.round((vals[item.rarity] || 20) * (1 + (item.ilvl || 1) * 0.05));
+  player.inventory.splice(idx, 1);
+  player.gold += gold;
+  sfx('pickup'); ui.showToast(`Продано: ${item.name} (+${gold}💰)`, 1.6, item.color);
+  ui.refreshInventory(player); refreshHud();
+}
+
 function spawnDungeon() {
   clearEnemies();
   portalActive = false;
+  const biome = biomeForDepth(depth);
+  scene.userData.buildZone(biome);
   const count = Math.floor(DUNGEON.baseMobCount + depth * DUNGEON.mobPerDepth);
   for (let i = 0; i < count; i++) {
     const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * (WORLD.radius - 24);
@@ -456,7 +477,8 @@ function spawnDungeon() {
     const roll = Math.random();
     if (roll > 0.96 - depth * 0.01) grade = 'champion';
     else if (roll > 0.82 - depth * 0.01) grade = 'elite';
-    const type = MOB_TYPES[(Math.random() * MOB_TYPES.length) | 0];
+    const mpool = BIOME_MOBS[biome.id] || MOB_TYPES.map((t) => t.id);
+    const type = MOB_BY_ID[mpool[(Math.random() * mpool.length) | 0]] || MOB_TYPES[0];
     add(createMob(mobSpec(type, grade, Math.cos(a) * r, Math.sin(a) * r)));
   }
   mobsAlive = count;
@@ -464,9 +486,72 @@ function spawnDungeon() {
   boss = add(createMob(bossSpec(b, WORLD.portal.x, WORLD.portal.z - 6)));
   ui.updateBossBar(boss);
   sfx('boss');
-  ui.showToast(`Глубина ${depth} — ${b.name} ждёт. Зачисти и войди в портал.`, 4);
+  ui.showToast(`${biome.name} — глубина ${depth}. ${b.name} ждёт. Зачисти и войди в портал.`, 4);
+  maybeSpawnSecrets();
   refreshHud();
   setQuestDepth();
+}
+
+function secretBossForDepth(d) {
+  const idx = BOSSES.indexOf(bossForDepth(d));
+  return BOSSES[Math.min(BOSSES.length - 1, idx + 1)];
+}
+
+function maybeSpawnSecrets() {
+  secretBoss = null; secretRevealed = false;
+  if (Math.random() < SECRET.bossChance) {
+    const sb = secretBossForDepth(depth);
+    const a = Math.random() * Math.PI * 2, r = WORLD.radius - 9;
+    const spec = bossSpec(sb, Math.cos(a) * r, Math.sin(a) * r);
+    spec.isSecret = true;
+    spec.dropRarityMin = 'legendary';
+    spec.rarityBonus = 5;
+    spec.name = 'Тайный ' + spec.name;
+    spec.hp = Math.round(spec.hp * 1.3);
+    spec.attackDamage = Math.round(spec.attackDamage * 1.15);
+    secretBoss = add(createMob(spec));
+  }
+  if (Math.random() < SECRET.chestChance) {
+    const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * (WORLD.radius - 22);
+    spawnChest(Math.cos(a) * r, Math.sin(a) * r);
+  }
+}
+
+function spawnChest(x, z) {
+  const g = new THREE.Group();
+  const box = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: 0x6b4423, emissive: 0xffcc44, emissiveIntensity: 0.45, metalness: 0.3, roughness: 0.6 }));
+  box.position.y = 0.8; g.add(box);
+  const lid = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.5, 1.7), new THREE.MeshStandardMaterial({ color: 0xffcc44, emissive: 0xffaa00, emissiveIntensity: 0.7 }));
+  lid.position.y = 1.75; g.add(lid);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  secretChests.push({ mesh: g, pos: new THREE.Vector3(x, 0, z) });
+}
+
+function updateSecrets(dt) {
+  if (secretBoss && secretBoss.alive && !secretRevealed) {
+    if (Math.hypot(player.pos.x - secretBoss.pos.x, player.pos.z - secretBoss.pos.z) < 28) {
+      secretRevealed = true; sfx('boss');
+      ui.showToast(`⚠ Тайный босс пробудился: ${secretBoss.name}!`, 4, 0xff5050);
+    }
+  }
+  for (let i = secretChests.length - 1; i >= 0; i--) {
+    const c = secretChests[i];
+    c.mesh.rotation.y += dt * 0.8;
+    if (player.alive && Math.hypot(player.pos.x - c.pos.x, player.pos.z - c.pos.z) < 3.5) {
+      openChest(c); scene.remove(c.mesh); secretChests.splice(i, 1);
+    }
+  }
+}
+
+function openChest(c) {
+  const gold = 150 + depth * 40;
+  player.gold += gold;
+  const item = generateItem(depth + 2, Math.random, 3, 'magic');
+  spawnGroundItem(item, c.pos);
+  fx.spawnCastFlash(c.pos, 0xffcc44); sfx('pickup');
+  ui.showToast(`Сундук: +${gold} золота и ${item.name}!`, 2.6, 0xffcc44);
+  refreshHud();
 }
 
 function checkClear() {
@@ -598,6 +683,8 @@ function startGame(defId) {
     onLevelAbility: (key) => levelAbility(player, key),
     onBuyPotion: () => buyPotion(),
     onBuyGear: (tier) => buyGear(tier),
+    onSell: (item) => sellItem(item),
+    isUpgrade: (item) => isUpgrade(player, item),
   };
   depth = 1;
   initAudio(); resumeAudio(); initQuests();
@@ -653,6 +740,7 @@ function update(dt) {
 
   updateHazards(dt);
   updateGroundItems(dt);
+  updateSecrets(dt);
   fx.update(dt, entities, applyDamage);
 
   hudTimer -= dt;
@@ -671,7 +759,7 @@ animate();
   catch (e) { console.error('Модели не загрузились', e); }
   try { await preloadNature((d, t) => { if (loadingText) loadingText.textContent = `Загрузка окружения… ${d}/${t}`; }); }
   catch (e) { console.error('Природа не загрузилась', e); }
-  populateScatter(scene);
+  scene.userData.buildZone(biomeForDepth(1));
   const ld = document.getElementById('loading');
   if (ld) ld.style.display = 'none';
   ui.showClassSelect(HERO_DEFS, (id) => startGame(id));

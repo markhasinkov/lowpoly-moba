@@ -132,6 +132,17 @@ export const ITEM_BASES = [
   { slot: 'boots',  name: 'Сапоги',   icon: '👢', base: { moveSpeed: 0.6, armor: 1 }, perLevel: { armor: 1 } },
   { slot: 'ring',   name: 'Кольцо',   icon: '💍', base: { critChance: 0.03 }, perLevel: { critChance: 0.01 } },
   { slot: 'amulet', name: 'Амулет',   icon: '📿', base: { maxMana: 30, manaRegen: 1 }, perLevel: { maxMana: 14 } },
+  { slot: 'weapon', name: 'Секира',   icon: '🪓', base: { attackDamage: 11 }, perLevel: { attackDamage: 3.6 } },
+  { slot: 'weapon', name: 'Кинжал',   icon: '🔪', base: { attackDamage: 6, critChance: 0.05 }, perLevel: { attackDamage: 2, critChance: 0.004 } },
+  { slot: 'weapon', name: 'Лук',      icon: '🏹', base: { attackDamage: 7, attackSpeedPct: 0.08 }, perLevel: { attackDamage: 2.4 } },
+  { slot: 'helmet', name: 'Корона',   icon: '👑', base: { maxMana: 60, spellAmp: 0.04 }, perLevel: { maxMana: 18, spellAmp: 0.008 } },
+  { slot: 'armor',  name: 'Мантия',   icon: '🧥', base: { maxMana: 60, spellAmp: 0.05, armor: 2 }, perLevel: { maxMana: 20, spellAmp: 0.012 } },
+  { slot: 'armor',  name: 'Кожаный доспех', icon: '🦺', base: { armor: 3, maxHp: 30, moveSpeed: 0.4 }, perLevel: { armor: 1.3, maxHp: 16 } },
+  { slot: 'boots',  name: 'Сапоги скорости', icon: '🥾', base: { moveSpeed: 1.1 }, perLevel: { moveSpeed: 0.03, armor: 0.6 } },
+  { slot: 'ring',   name: 'Печатка',  icon: '💎', base: { attackDamage: 5 }, perLevel: { attackDamage: 1.6 } },
+  { slot: 'ring',   name: 'Кольцо маны', icon: '🔮', base: { maxMana: 40, cdr: 0.03 }, perLevel: { maxMana: 14 } },
+  { slot: 'amulet', name: 'Талисман', icon: '🧿', base: { maxHp: 50, armor: 2 }, perLevel: { maxHp: 18 } },
+  { slot: 'amulet', name: 'Кулон вампира', icon: '🩸', base: { lifesteal: 0.05, attackDamage: 4 }, perLevel: { attackDamage: 1.2 } },
 ];
 
 // Affix pool — rolled onto rare+ items. value = base + perLevel*itemLevel, jittered.
@@ -148,6 +159,20 @@ export const AFFIXES = [
   { id: 'cdr',          label: '-{v}% перезарядка',       base: 4,    per: 1,    pct: true, round: 1 },
   { id: 'spellAmp',     label: '+{v}% урон умений',       base: 6,    per: 1.6,  pct: true, round: 1 },
   { id: 'xpGain',       label: '+{v}% опыта',             base: 6,    per: 1.2,  pct: true, round: 1 },
+  { id: 'hpRegen',     label: '+{v} реген HP',          base: 2,    per: 0.6,  round: 1 },
+  { id: 'manaRegen',   label: '+{v} реген маны',        base: 1.5,  per: 0.4,  round: 0.1 },
+];
+
+// ===== Unique legendaries — fixed special items (rolled on legendary drops) =====
+export const UNIQUES = [
+  { slot: 'weapon', name: 'Губитель Душ',     icon: '🗡️', base: { attackDamage: 20, lifesteal: 0.10, critChance: 0.06 }, perLevel: { attackDamage: 4 } },
+  { slot: 'weapon', name: 'Посох Вечности',   icon: '🪄', base: { attackDamage: 10, spellAmp: 0.25, maxMana: 120 }, perLevel: { attackDamage: 2, spellAmp: 0.02 } },
+  { slot: 'weapon', name: 'Клинки Бури',      icon: '🔪', base: { attackDamage: 12, attackSpeedPct: 0.25, critChance: 0.08 }, perLevel: { attackDamage: 3 } },
+  { slot: 'armor',  name: 'Доспех Бессмертного', icon: '🥋', base: { armor: 12, maxHp: 300, hpRegen: 6 }, perLevel: { armor: 2, maxHp: 30 } },
+  { slot: 'helmet', name: 'Венец Архонта',    icon: '👑', base: { maxMana: 150, spellAmp: 0.12, cdr: 0.08 }, perLevel: { maxMana: 20 } },
+  { slot: 'boots',  name: 'Поступь Ветра',    icon: '🥾', base: { moveSpeed: 2.5, attackSpeedPct: 0.12 }, perLevel: {} },
+  { slot: 'ring',   name: 'Печать Палача',    icon: '💍', base: { critChance: 0.10, critMult: 0.40 }, perLevel: {} },
+  { slot: 'amulet', name: 'Сердце Дракона',   icon: '📿', base: { maxHp: 220, lifesteal: 0.12, attackDamage: 14 }, perLevel: { maxHp: 18, attackDamage: 2 } },
 ];
 
 // ===== Mobs (KayKit skeletons). grade affects HP/dmg/scale/drops =====
@@ -162,7 +187,15 @@ export const MOB_TYPES = [
   { id: 'skeleton',  name: 'Скелет',        model: 'minion',  maxHp: 90,  attackDamage: 14, attackRange: 5, attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 22, gold: 6, attackType: 'melee' },
   { id: 'warrior',   name: 'Скелет-воин',   model: 'warrior', maxHp: 150, attackDamage: 20, attackRange: 5, attackSpeed: 0.9, armor: 3, moveSpeed: 7,  xp: 34, gold: 10, attackType: 'melee' },
   { id: 'skmage',    name: 'Скелет-маг',    model: 'mage',    maxHp: 80,  attackDamage: 17, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7, xp: 40, gold: 13, attackType: 'ranged', projectile: { speed: 34, color: 0xb96bff, radius: 1.1 } },
+  { id: 'scout',     name: 'Скелет-разведчик', model: 'minion',  scale: 0.9,  maxHp: 60,  attackDamage: 11, attackRange: 5,  attackSpeed: 1.3, armor: 0, moveSpeed: 11, xp: 20, gold: 6,  attackType: 'melee', tint: 0x9be29b },
+  { id: 'brute',     name: 'Костолом',        model: 'warrior', scale: 1.35, maxHp: 280, attackDamage: 30, attackRange: 5,  attackSpeed: 0.7, armor: 5, moveSpeed: 5.5, xp: 55, gold: 18, attackType: 'melee', tint: 0xff6a4a },
+  { id: 'venom',     name: 'Ядовитый скелет', model: 'minion',  maxHp: 100, attackDamage: 16, attackRange: 5,  attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 28, gold: 9,  attackType: 'melee', tint: 0x6fdf3a },
+  { id: 'hellhound', name: 'Адская гончая',   model: 'minion',  scale: 0.95, maxHp: 120, attackDamage: 22, attackRange: 5,  attackSpeed: 1.2, armor: 1, moveSpeed: 12, xp: 38, gold: 12, attackType: 'melee', tint: 0xff8a3a },
+  { id: 'revenant',  name: 'Ревенант',        model: 'warrior', maxHp: 200, attackDamage: 26, attackRange: 5,  attackSpeed: 0.85, armor: 4, moveSpeed: 7, xp: 48, gold: 16, attackType: 'melee', tint: 0xb96bff },
+  { id: 'archer',    name: 'Скелет-лучник',   model: 'mage',    maxHp: 70,  attackDamage: 15, attackRange: 22, attackSpeed: 1.0, armor: 0, moveSpeed: 8,  xp: 30, gold: 10, attackType: 'ranged', projectile: { speed: 40, color: 0xe0cf88, radius: 0.8 }, tint: 0xc9b27a },
+  { id: 'frostmage', name: 'Ледяной маг',     model: 'mage',    maxHp: 90,  attackDamage: 20, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7,  xp: 42, gold: 14, attackType: 'ranged', projectile: { speed: 32, color: 0x6fc6ff, radius: 1.1 }, tint: 0x8fd6ff },
 ];
+export const MOB_BY_ID = Object.fromEntries(MOB_TYPES.map((t) => [t.id, t]));
 
 // ===== Bosses — graded, leveled, distinct mechanics =====
 // mechanic: 'slam' | 'barrage' | 'firezones' | 'phases'
@@ -216,3 +249,153 @@ export const TALENTS = [
   { id: 'haste',    name: 'Ускорение',   icon: '⏱️', desc: '-12% перезарядка',       stats: { cdr: 0.12 } },
   { id: 'bulwark',  name: 'Оплот',       icon: '🛡️', desc: '+8 к броне',           stats: { armor: 8 } },
 ];
+
+// ===== Per-class talent trees — one tier chosen at each TALENT_LEVELS milestone =====
+export const CLASS_TALENTS = {
+  guardian: [
+    { name: 'Основа', options: [
+      { id: 'g_might', name: 'Мощь', icon: '🗡️', desc: '+16 урон', stats: { attackDamage: 16 } },
+      { id: 'g_vit', name: 'Стойкость', icon: '❤️', desc: '+180 HP', stats: { maxHp: 180 } },
+      { id: 'g_arm', name: 'Закал', icon: '🛡️', desc: '+6 броня', stats: { armor: 6 } },
+    ] },
+    { name: 'Защита', options: [
+      { id: 'g_aegis', name: 'Эгида', icon: '🛡️', desc: '+10 броня', stats: { armor: 10 } },
+      { id: 'g_iron', name: 'Железная кожа', icon: '❤️', desc: '+260 HP', stats: { maxHp: 260 } },
+      { id: 'g_regen', name: 'Регенерация', icon: '💗', desc: '+6 реген HP', stats: { hpRegen: 6 } },
+    ] },
+    { name: 'Натиск', options: [
+      { id: 'g_crus', name: 'Крестоносец', icon: '⚔️', desc: '+26 урон', stats: { attackDamage: 26 } },
+      { id: 'g_vamp', name: 'Жажда крови', icon: '🩸', desc: '+10% вампиризм', stats: { lifesteal: 0.10 } },
+      { id: 'g_brut', name: 'Жестокость', icon: '💥', desc: '+35% урон крита', stats: { critMult: 0.35 } },
+    ] },
+    { name: 'Бастион', options: [
+      { id: 'g_fort', name: 'Крепость', icon: '🏰', desc: '+14 броня, +200 HP', stats: { armor: 14, maxHp: 200 } },
+      { id: 'g_haste', name: 'Натиск', icon: '⏱️', desc: '−14% перезарядка', stats: { cdr: 0.14 } },
+      { id: 'g_swift', name: 'Поступь', icon: '👟', desc: '+1.5 скорость', stats: { moveSpeed: 1.5 } },
+    ] },
+    { name: 'Гнев', options: [
+      { id: 'g_bers', name: 'Берсерк', icon: '🔥', desc: '+36 урон, +15% ск.атаки', stats: { attackDamage: 36, attackSpeedPct: 0.15 } },
+      { id: 'g_drain', name: 'Кровопийца', icon: '🩸', desc: '+14% вампиризм', stats: { lifesteal: 0.14 } },
+      { id: 'g_titan', name: 'Титан', icon: '❤️', desc: '+420 HP', stats: { maxHp: 420 } },
+    ] },
+    { name: 'Несокрушимость', options: [
+      { id: 'g_jugg', name: 'Джагернаут', icon: '🛡️', desc: '+18 броня, +8 реген', stats: { armor: 18, hpRegen: 8 } },
+      { id: 'g_war', name: 'Полководец', icon: '⚔️', desc: '+44 урон', stats: { attackDamage: 44 } },
+      { id: 'g_guard', name: 'Защитник', icon: '💥', desc: '+8% крит, +24% урон крита', stats: { critChance: 0.08, critMult: 0.24 } },
+    ] },
+    { name: 'Легенда', options: [
+      { id: 'g_col', name: 'Колосс', icon: '🏔️', desc: '+600 HP, +12 броня', stats: { maxHp: 600, armor: 12 } },
+      { id: 'g_exec', name: 'Палач', icon: '💀', desc: '+60% урон крита', stats: { critMult: 0.60 } },
+      { id: 'g_blood', name: 'Кровавая ярость', icon: '🩸', desc: '+20% вампиризм, +12% ск.атаки', stats: { lifesteal: 0.20, attackSpeedPct: 0.12 } },
+    ] },
+    { name: 'Аватар', options: [
+      { id: 'g_ava', name: 'Аватар войны', icon: '⚔️', desc: '+70 урон, +400 HP', stats: { attackDamage: 70, maxHp: 400 } },
+      { id: 'g_imm', name: 'Бессмертный', icon: '❤️', desc: '+900 HP, +12 реген', stats: { maxHp: 900, hpRegen: 12 } },
+      { id: 'g_unstop', name: 'Неудержимый', icon: '🛡️', desc: '+24 броня, −18% перезарядка', stats: { armor: 24, cdr: 0.18 } },
+    ] },
+  ],
+  mage: [
+    { name: 'Искра', options: [
+      { id: 'm_arc', name: 'Чародейство', icon: '✨', desc: '+12% урон умений', stats: { spellAmp: 0.12 } },
+      { id: 'm_mana', name: 'Резерв', icon: '🔵', desc: '+120 мана', stats: { maxMana: 120 } },
+      { id: 'm_foc', name: 'Фокус', icon: '🗡️', desc: '+14 урон', stats: { attackDamage: 14 } },
+    ] },
+    { name: 'Поток маны', options: [
+      { id: 'm_chan', name: 'Поток', icon: '💧', desc: '+4 реген маны', stats: { manaRegen: 4 } },
+      { id: 'm_haste', name: 'Ускорение', icon: '⏱️', desc: '−12% перезарядка', stats: { cdr: 0.12 } },
+      { id: 'm_pow', name: 'Сила', icon: '✨', desc: '+16% урон умений', stats: { spellAmp: 0.16 } },
+    ] },
+    { name: 'Чары', options: [
+      { id: 'm_prec', name: 'Точность', icon: '💥', desc: '+10% крит', stats: { critChance: 0.10 } },
+      { id: 'm_amp', name: 'Усиление', icon: '✨', desc: '+20% урон умений', stats: { spellAmp: 0.20 } },
+      { id: 'm_res', name: 'Океан маны', icon: '🔵', desc: '+200 мана', stats: { maxMana: 200 } },
+    ] },
+    { name: 'Мудрость', options: [
+      { id: 'm_sch', name: 'Учёный', icon: '📚', desc: '+15% опыта', stats: { xpGain: 0.15 } },
+      { id: 'm_blink', name: 'Мерцание', icon: '👟', desc: '+1.5 скорость', stats: { moveSpeed: 1.5 } },
+      { id: 'm_alac', name: 'Проворство', icon: '⏱️', desc: '−16% перезарядка', stats: { cdr: 0.16 } },
+    ] },
+    { name: 'Стихия', options: [
+      { id: 'm_elem', name: 'Стихийник', icon: '🔥', desc: '+26% урон умений', stats: { spellAmp: 0.26 } },
+      { id: 'm_bm', name: 'Боевой маг', icon: '⚔️', desc: '+30 урон, +10% урон умений', stats: { attackDamage: 30, spellAmp: 0.10 } },
+      { id: 'm_acrit', name: 'Магокрит', icon: '💥', desc: '+12% крит, +30% урон крита', stats: { critChance: 0.12, critMult: 0.30 } },
+    ] },
+    { name: 'Высшая магия', options: [
+      { id: 'm_high', name: 'Высшая магия', icon: '✨', desc: '+30% урон умений, +200 мана', stats: { spellAmp: 0.30, maxMana: 200 } },
+      { id: 'm_well', name: 'Источник', icon: '💧', desc: '+8 реген маны', stats: { manaRegen: 8 } },
+      { id: 'm_quick', name: 'Скоротечность', icon: '⏱️', desc: '−20% перезарядка', stats: { cdr: 0.20 } },
+    ] },
+    { name: 'Архимаг', options: [
+      { id: 'm_archi', name: 'Архимаг', icon: '🌟', desc: '+40% урон умений', stats: { spellAmp: 0.40 } },
+      { id: 'm_void', name: 'Бездна', icon: '💥', desc: '+20% урон умений, +15% крит', stats: { spellAmp: 0.20, critChance: 0.15 } },
+      { id: 'm_font', name: 'Бездонный', icon: '🔵', desc: '+400 мана, +6 реген маны', stats: { maxMana: 400, manaRegen: 6 } },
+    ] },
+    { name: 'Вознесение', options: [
+      { id: 'm_asc', name: 'Вознесение', icon: '🌟', desc: '+55% урон умений', stats: { spellAmp: 0.55 } },
+      { id: 'm_time', name: 'Властелин времени', icon: '⏱️', desc: '+30% урон умений, −20% перезарядка', stats: { spellAmp: 0.30, cdr: 0.20 } },
+      { id: 'm_war', name: 'Боевой архонт', icon: '⚔️', desc: '+50 урон, +25% урон умений', stats: { attackDamage: 50, spellAmp: 0.25 } },
+    ] },
+  ],
+  assassin: [
+    { name: 'Клинок', options: [
+      { id: 'a_crit', name: 'Точность', icon: '💥', desc: '+10% крит', stats: { critChance: 0.10 } },
+      { id: 'a_as', name: 'Ловкость', icon: '⚡', desc: '+15% ск.атаки', stats: { attackSpeedPct: 0.15 } },
+      { id: 'a_dmg', name: 'Заточка', icon: '🗡️', desc: '+14 урон', stats: { attackDamage: 14 } },
+    ] },
+    { name: 'Тень', options: [
+      { id: 'a_move', name: 'Тень', icon: '👟', desc: '+1.5 скорость', stats: { moveSpeed: 1.5 } },
+      { id: 'a_ls', name: 'Кровосос', icon: '🩸', desc: '+10% вампиризм', stats: { lifesteal: 0.10 } },
+      { id: 'a_cm', name: 'Жестокость', icon: '💥', desc: '+30% урон крита', stats: { critMult: 0.30 } },
+    ] },
+    { name: 'Ловкость', options: [
+      { id: 'a_as2', name: 'Вихрь', icon: '⚡', desc: '+20% ск.атаки', stats: { attackSpeedPct: 0.20 } },
+      { id: 'a_crit2', name: 'Меткость', icon: '💥', desc: '+12% крит', stats: { critChance: 0.12 } },
+      { id: 'a_dmg2', name: 'Резак', icon: '🗡️', desc: '+24 урон', stats: { attackDamage: 24 } },
+    ] },
+    { name: 'Жажда', options: [
+      { id: 'a_ls2', name: 'Жажда', icon: '🩸', desc: '+14% вампиризм', stats: { lifesteal: 0.14 } },
+      { id: 'a_cdr', name: 'Проворство', icon: '⏱️', desc: '−14% перезарядка', stats: { cdr: 0.14 } },
+      { id: 'a_move2', name: 'Стремительность', icon: '👟', desc: '+2 скорость', stats: { moveSpeed: 2 } },
+    ] },
+    { name: 'Смертоносность', options: [
+      { id: 'a_deadly', name: 'Смертоносность', icon: '💥', desc: '+15% крит, +30% урон крита', stats: { critChance: 0.15, critMult: 0.30 } },
+      { id: 'a_flurry', name: 'Шквал', icon: '⚡', desc: '+25% ск.атаки', stats: { attackSpeedPct: 0.25 } },
+      { id: 'a_blood', name: 'Кровавый клинок', icon: '🩸', desc: '+36 урон, +10% вампиризм', stats: { attackDamage: 36, lifesteal: 0.10 } },
+    ] },
+    { name: 'Убийца', options: [
+      { id: 'a_exec', name: 'Палач', icon: '💀', desc: '+50% урон крита', stats: { critMult: 0.50 } },
+      { id: 'a_relent', name: 'Неистовство', icon: '⚡', desc: '+22% ск.атаки, +10% крит', stats: { attackSpeedPct: 0.22, critChance: 0.10 } },
+      { id: 'a_leech', name: 'Пиявка', icon: '🩸', desc: '+18% вампиризм', stats: { lifesteal: 0.18 } },
+    ] },
+    { name: 'Призрак', options: [
+      { id: 'a_ghost', name: 'Призрак', icon: '💥', desc: '+18% крит, +40% урон крита', stats: { critChance: 0.18, critMult: 0.40 } },
+      { id: 'a_storm', name: 'Буря клинков', icon: '⚡', desc: '+30% ск.атаки', stats: { attackSpeedPct: 0.30 } },
+      { id: 'a_phantom', name: 'Фантом', icon: '👟', desc: '+2.5 скорость, +15% вампиризм', stats: { moveSpeed: 2.5, lifesteal: 0.15 } },
+    ] },
+    { name: 'Жнец', options: [
+      { id: 'a_reaper', name: 'Жнец', icon: '💀', desc: '+20% крит, +60% урон крита', stats: { critChance: 0.20, critMult: 0.60 } },
+      { id: 'a_assault', name: 'Шторм', icon: '⚔️', desc: '+60 урон, +20% ск.атаки', stats: { attackDamage: 60, attackSpeedPct: 0.20 } },
+      { id: 'a_vamplord', name: 'Владыка крови', icon: '🩸', desc: '+25% вампиризм, +12% крит', stats: { lifesteal: 0.25, critChance: 0.12 } },
+    ] },
+  ],
+};
+
+// ===== Biomes — varied zones per depth =====
+export const BIOMES = [
+  { id: 'forest',    name: 'Лес',          radius: 58, ground: [0x4a7c3f, 0x36602f, 0x577f43], skyTop: 0x2f6ec4, skyHorizon: 0xcfe6f0, fog: { color: 0xcfe6f0, near: 110, far: 230 }, hemiSky: 0xbfe0ff, hemiGround: 0x4a6b3a, moon: 0xfff0d2, fill: 0x88aaff, density: 150, cats: ['trees', 'rocks', 'bushes', 'grass', 'mushrooms'] },
+  { id: 'crypt',     name: 'Склеп',        radius: 40, ground: [0x3a3a44, 0x2a2a32, 0x44414f], skyTop: 0x0a0a14, skyHorizon: 0x241f33, fog: { color: 0x14101c, near: 36, far: 110 }, hemiSky: 0x8a86b0, hemiGround: 0x201c2a, moon: 0xb8a6ff, fill: 0x6655aa, density: 55, cats: ['rocks', 'mushrooms'] },
+  { id: 'wasteland', name: 'Пустошь',     radius: 76, ground: [0x6b5a3a, 0x554629, 0x7a6440], skyTop: 0x7a4a2a, skyHorizon: 0xd9a86a, fog: { color: 0xc99a63, near: 130, far: 280 }, hemiSky: 0xffd9a0, hemiGround: 0x6b5333, moon: 0xffe0b0, fill: 0xff9a55, density: 70, cats: ['rocks', 'stumps', 'trees'] },
+  { id: 'frost',     name: 'Мерзлота',     radius: 54, ground: [0xa9c4d6, 0x8aa6bd, 0xc6dcec], skyTop: 0x2a5a8a, skyHorizon: 0xd6ecf7, fog: { color: 0xd6ecf7, near: 90, far: 210 }, hemiSky: 0xd6ecff, hemiGround: 0x6a8499, moon: 0xffffff, fill: 0x9ac4ff, density: 85, cats: ['trees', 'rocks'] },
+  { id: 'infernal',  name: 'Преисподняя', radius: 64, ground: [0x3a1f1f, 0x2a1414, 0x4a2424], skyTop: 0x1a0606, skyHorizon: 0x5a1a10, fog: { color: 0x2a0c08, near: 56, far: 160 }, hemiSky: 0xff8a5c, hemiGround: 0x2a1010, moon: 0xff7040, fill: 0xff4020, density: 75, cats: ['rocks', 'stumps'] },
+];
+export function biomeForDepth(depth) { return BIOMES[(depth - 1) % BIOMES.length]; }
+export const BIOME_MOBS = {
+  forest:    ['skeleton', 'scout', 'venom', 'warrior'],
+  crypt:     ['skeleton', 'skmage', 'revenant', 'warrior'],
+  wasteland: ['warrior', 'brute', 'archer', 'scout'],
+  frost:     ['skeleton', 'frostmage', 'warrior', 'revenant'],
+  infernal:  ['hellhound', 'brute', 'skmage', 'revenant'],
+};
+
+// chance per depth for secret content
+export const SECRET = { bossChance: 0.3, chestChance: 0.45 };

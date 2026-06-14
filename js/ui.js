@@ -28,7 +28,7 @@ export class UI {
     this._toastT = 0;
     this._invOpen = false;
     this._shopOpen = false;
-    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {} };
+    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {}, onSell: () => {}, isUpgrade: () => false };
     for (const k of ['Q', 'W', 'E', 'R']) {
       const btn = this.abilityEls[k] && this.abilityEls[k].querySelector('.levelup');
       if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevelAbility(k); });
@@ -160,12 +160,14 @@ export class UI {
 
     let inv = '';
     p.inventory.forEach((it, i) => {
-      inv += `<div class="inv-slot" data-i="${i}" title="${this._itemTip(it)}" style="--rc:${it.color}"><span>${it.icon}</span></div>`;
+      const up = this.callbacks.isUpgrade && this.callbacks.isUpgrade(it) ? ' upgrade' : '';
+      inv += `<div class="inv-slot${up}" data-i="${i}" title="${this._itemTip(it)}\n[ПКМ — продать]" style="--rc:${it.color}"><span>${it.icon}</span></div>`;
     });
     this.invGrid.innerHTML = inv;
-    this.invGrid.querySelectorAll('.inv-slot').forEach(el => el.addEventListener('click', () => {
-      const it = p.inventory[parseInt(el.dataset.i, 10)]; if (it) this.callbacks.onEquip(it);
-    }));
+    this.invGrid.querySelectorAll('.inv-slot').forEach(el => {
+      el.addEventListener('click', () => { const it = p.inventory[parseInt(el.dataset.i, 10)]; if (it) this.callbacks.onEquip(it); });
+      el.addEventListener('contextmenu', (e) => { e.preventDefault(); const it = p.inventory[parseInt(el.dataset.i, 10)]; if (it && this.callbacks.onSell) this.callbacks.onSell(it); });
+    });
 
     if (this.charStats) {
       this.charStats.innerHTML = [
@@ -186,10 +188,10 @@ export class UI {
     ).join('');
   }
 
-  showTalentChoice(opts, onPick) {
+  showTalentChoice(opts, onPick, subtitle) {
     const ov = document.getElementById('talent-overlay');
     if (!ov) { onPick(opts[0]); return; }
-    ov.innerHTML = '<h2>\u0412\u044b\u0431\u0435\u0440\u0438 \u0442\u0430\u043b\u0430\u043d\u0442</h2><div class="talent-row">' +
+    ov.innerHTML = '<h2>Древо талантов</h2>' + (subtitle ? `<div class="talent-sub">${subtitle}</div>` : '') + '<div class="talent-row">' +
       opts.map((t, i) => `<div class="talent-card" data-i="${i}"><div class="tc-icon">${t.icon}</div><div class="tc-name">${t.name}</div><div class="tc-desc">${t.desc}</div></div>`).join('') +
       '</div>';
     ov.style.display = 'flex';
