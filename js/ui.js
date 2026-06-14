@@ -299,6 +299,8 @@ export class UI {
       else if (ev.kind === 'altar') { ctx.beginPath(); ctx.fillStyle = ev.done ? '#666' : '#ffe066'; ctx.arc(ex, ez, 3.2, 0, Math.PI * 2); ctx.fill(); }
       else if (ev.kind === 'ambush' && !ev.done) { ctx.beginPath(); ctx.strokeStyle = '#ff4030'; ctx.lineWidth = 1.6; ctx.arc(ex, ez, 3.5, 0, Math.PI * 2); ctx.stroke(); }
       else if (ev.kind === 'rescue' && !ev.done) { ctx.fillStyle = '#6ad0ff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', ex, ez); ctx.beginPath(); ctx.strokeStyle = '#6ad0ff'; ctx.lineWidth = 1.4; ctx.arc(ex, ez, 4, 0, Math.PI * 2); ctx.stroke(); }
+      else if (ev.kind === 'escort' && !ev.done) { ctx.beginPath(); ctx.fillStyle = '#7fe0a8'; ctx.arc(ex, ez, 3, 0, Math.PI * 2); ctx.fill(); }
+      else if (ev.kind === 'defend' && !ev.done) { ctx.beginPath(); ctx.strokeStyle = '#ffcc44'; ctx.lineWidth = 1.4; ctx.arc(ex, ez, (ev.radius || 8) * sc, 0, Math.PI * 2); ctx.stroke(); }
     }
 
     // enemies

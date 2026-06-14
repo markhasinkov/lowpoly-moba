@@ -344,7 +344,9 @@ function makeDepthQuests() {
   depthQuests.push({ id: 'd_boss', desc: `Срази босса: ${b.name}`, type: 'd_boss', target: 1, progress: 0, done: false, gold: 120, xp: 200 });
   const killN = 5 + Math.floor(depth * 1.5);
   depthQuests.push({ id: 'd_slay', desc: `Убей ${killN} врагов`, type: 'd_slay', target: killN, progress: 0, done: false, gold: 90, xp: 140 });
-  if (Math.random() < 0.6) spawnRescue();
+  if (Math.random() < 0.5) spawnRescue();
+  if (Math.random() < 0.32) spawnEscort();
+  if (Math.random() < 0.32) spawnDefend();
   refreshQuests();
 }
 
@@ -1127,6 +1129,35 @@ function updateEvents(dt) {
       }
     } else if (ev.kind === 'rescue') {
       if (ev.parts && ev.parts.captive) { ev.parts.captive.rotation.y += dt; ev.parts.captive.position.y = 1.2 + Math.sin(matchTime * 3) * 0.12; }
+    } else if (ev.kind === 'escort') {
+      if (ev.parts && ev.parts.fig) ev.parts.fig.position.y = 1.0 + Math.sin(matchTime * 3) * 0.12;
+      if (!ev.done && !ev.active) {
+        if (player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < 5) {
+          ev.active = true;
+          const q = depthQuests.find((qq) => qq.type === 'd_escort'); if (q) q.desc = 'Веди странника к порталу';
+          ui.showToast('🧍 Странник идёт за тобой! Доведи до портала.', 3, '#7fe0a8'); refreshQuests();
+        }
+      } else if (ev.active && !ev.done) {
+        const dx = player.pos.x - ev.pos.x, dz = player.pos.z - ev.pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        if (d > 3.5) { const step = Math.min(9 * dt, d - 3.0); ev.pos.x += dx / d * step; ev.pos.z += dz / d * step; }
+        ev.mesh.position.set(ev.pos.x, 0, ev.pos.z);
+        ev.mesh.rotation.y = Math.atan2(dx, dz);
+        if (Math.hypot(ev.pos.x - WORLD.portal.x, ev.pos.z - WORLD.portal.z) < 8) completeEscort(ev);
+      }
+    } else if (ev.kind === 'defend') {
+      if (ev.parts && ev.parts.flag) ev.parts.flag.rotation.y += dt * 1.5;
+      if (!ev.done && player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < ev.radius) {
+        ev.held += dt; ev.waveT -= dt;
+        if (ev.waveT <= 0) { spawnDefendWave(ev); ev.waveT = 5.5; }
+        const sec = Math.floor(ev.held);
+        if (sec !== ev._lastSec) {
+          ev._lastSec = sec;
+          const q = depthQuests.find((qq) => qq.type === 'd_defend');
+          if (q && !q.done) { q.progress = Math.min(q.target, sec); refreshQuests(); }
+        }
+        if (ev.held >= ev.target) completeDefend(ev);
+      }
     }
   }
 }
@@ -1197,6 +1228,108 @@ function completeRescue(ev) {
   ui.showToast('✨ Пленник спасён!', 2.6, '#6ad0ff');
   for (const q of depthQuests) { if (q.type === 'd_rescue' && !q.done) { q.progress = q.target; completeDepthQuest(q); } }
   setTimeout(() => { scene.remove(ev.mesh); }, 2500);
+}
+
+// ---------- escort event: lead a stranded NPC to the portal ----------
+function buildStranded(x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const fig = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.6, 1.5, 8),
+    new THREE.MeshStandardMaterial({ color: 0x7fe0a8, emissive: 0x2a8a5a, emissiveIntensity: 0.5, flatShading: true }));
+  body.position.y = 0.85; fig.add(body);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.4, 0),
+    new THREE.MeshStandardMaterial({ color: 0xf0d6b0, flatShading: true }));
+  head.position.y = 1.75; fig.add(head);
+  g.add(fig);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.3, 0.1, 8, 22),
+    new THREE.MeshStandardMaterial({ color: 0x7fe0a8, emissive: 0x3aa86a, emissiveIntensity: 1, flatShading: true }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.1; g.add(ring);
+  scene.add(g);
+  return { mesh: g, fig };
+}
+
+function spawnEscort() {
+  let x = 0, z = 0, ok = false;
+  for (let tries = 0; tries < 14; tries++) {
+    const a = Math.random() * Math.PI * 2;
+    const dist = (0.45 + Math.random() * 0.4) * arenaRadiusAt(a);
+    x = Math.cos(a) * dist; z = Math.sin(a) * dist;
+    if (Math.hypot(x, z) < 20) continue;
+    if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 26) continue;
+    ok = true; break;
+  }
+  if (!ok) return;
+  const built = buildStranded(x, z);
+  mapEvents.push({ kind: 'escort', mesh: built.mesh, parts: { fig: built.fig }, pos: new THREE.Vector3(x, 0, z), done: false, active: false });
+  depthQuests.push({ id: 'd_escort', desc: 'Найди странника (зелёный маркер)', type: 'd_escort', target: 1, progress: 0, done: false, gold: 160, xp: 260 });
+}
+
+function completeEscort(ev) {
+  if (ev.done) return;
+  ev.done = true;
+  fx.spawnCastFlash(WORLD.portal, 0x7fe0a8); sfx('quest');
+  ui.showToast('✨ Странник в безопасности!', 2.6, '#7fe0a8');
+  for (const q of depthQuests) { if (q.type === 'd_escort' && !q.done) { q.progress = q.target; completeDepthQuest(q); } }
+  scene.remove(ev.mesh);
+}
+
+// ---------- defend event: hold the point for N seconds ----------
+function buildStandard(x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 4, 7),
+    new THREE.MeshStandardMaterial({ color: 0x8a6a3a, flatShading: true }));
+  pole.position.y = 2; pole.castShadow = true; g.add(pole);
+  const flag = new THREE.Mesh(new THREE.BoxGeometry(1.6, 1.0, 0.08),
+    new THREE.MeshStandardMaterial({ color: 0xffcc44, emissive: 0xaa7a10, emissiveIntensity: 0.6, flatShading: true }));
+  flag.position.set(0.8, 3.3, 0); g.add(flag);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(7.4, 8, 40),
+    new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.4, side: THREE.DoubleSide }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; g.add(ring);
+  const fill = new THREE.Mesh(new THREE.CircleGeometry(8, 36),
+    new THREE.MeshBasicMaterial({ color: 0xffcc44, transparent: true, opacity: 0.08, side: THREE.DoubleSide }));
+  fill.rotation.x = -Math.PI / 2; fill.position.y = 0.05; g.add(fill);
+  scene.add(g);
+  return { mesh: g, flag };
+}
+
+function spawnDefend() {
+  let x = 0, z = 0, ok = false;
+  for (let tries = 0; tries < 14; tries++) {
+    const a = Math.random() * Math.PI * 2;
+    const dist = (0.25 + Math.random() * 0.4) * arenaRadiusAt(a);
+    x = Math.cos(a) * dist; z = Math.sin(a) * dist;
+    if (Math.hypot(x, z) < 16) continue;
+    if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 16) continue;
+    ok = true; break;
+  }
+  if (!ok) return;
+  const built = buildStandard(x, z);
+  const target = 25;
+  mapEvents.push({ kind: 'defend', mesh: built.mesh, parts: { flag: built.flag }, pos: new THREE.Vector3(x, 0, z), done: false, held: 0, target, waveT: 2, radius: 8, _lastSec: -1 });
+  depthQuests.push({ id: 'd_defend', desc: `Удержи точку ${target}с`, type: 'd_defend', target, progress: 0, done: false, gold: 170, xp: 280 });
+}
+
+function spawnDefendWave(ev) {
+  const biome = biomeForDepth(depth);
+  const pool = BIOME_MOBS[biome.id] || MOB_TYPES.map((t) => t.id);
+  const n = 2 + ((Math.random() * 2) | 0);
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const ex = ev.pos.x + Math.cos(a) * (ev.radius + 2), ez = ev.pos.z + Math.sin(a) * (ev.radius + 2);
+    const type = MOB_BY_ID[pool[(Math.random() * pool.length) | 0]] || MOB_TYPES[0];
+    add(createMob(mobSpec(type, 'trash', ex, ez))); mobsAlive++;
+  }
+}
+
+function completeDefend(ev) {
+  if (ev.done) return;
+  ev.done = true;
+  fx.spawnCastFlash(ev.pos, 0xffcc44); sfx('quest');
+  if (ev.parts.flag) ev.parts.flag.material.color.setHex(0x7fe0a8);
+  ui.showToast('✨ Точка удержана!', 2.6, '#ffcc44');
+  for (const q of depthQuests) { if (q.type === 'd_defend' && !q.done) { q.progress = q.target; completeDepthQuest(q); } }
 }
 
 // ---------- floaters (DOM damage numbers) ----------
