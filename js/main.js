@@ -510,7 +510,7 @@ function mobSpec(type, grade, x, z) {
   const hpScale = 1 + depth * DUNGEON.hpPerDepth;
   const dmgScale = 1 + depth * DUNGEON.dmgPerDepth;
   return {
-    model: type.model, x, z,
+    id: type.id, model: type.model, x, z,
     grade, projectile: type.projectile || null,
     hp: Math.round(type.maxHp * g.hpMul * hpScale),
     attackDamage: Math.round(type.attackDamage * g.dmgMul * dmgScale),

@@ -208,6 +208,94 @@ function createGLTFHero(team, def, asset) {
 // ===== Mobs & Bosses (KayKit skeleton models) =====
 const MOB_ATTACK = { minion: '1H_Melee_Attack_Chop', warrior: '2H_Melee_Attack_Chop', mage: 'Spellcast_Shoot' };
 
+// ===== Per-mob procedural skins — props layered over the 3 base skeletons =====
+function decoMat(c, glow = false) {
+  return new THREE.MeshStandardMaterial({ color: c, emissive: glow ? c : 0x000000, emissiveIntensity: glow ? 0.9 : 0, flatShading: true, roughness: 0.6, metalness: 0.15, transparent: !!glow, opacity: glow ? 0.92 : 1 });
+}
+
+// config per mob id. Each entry lists which props to attach.
+const MOB_DECOR = {
+  skeleton:  {},
+  warrior:   { spikes: { color: 0xb9c0cc, n: 3 } },
+  skmage:    { orb: { color: 0xc77bff } },
+  scout:     { hood: { color: 0x2f6b2f } },
+  brute:     { horns: { color: 0x2a1812 }, spikes: { color: 0x7a3a26, n: 4, big: true } },
+  venom:     { aura: { color: 0x6fdf3a }, motes: { color: 0x9bff5a, n: 5, shape: 'sphere' } },
+  hellhound: { horns: { color: 0x140804 }, aura: { color: 0xff6a2a, low: true }, spikes: { color: 0xff8a3a, n: 3 } },
+  revenant:  { aura: { color: 0xb96bff }, motes: { color: 0xd6a8ff, n: 4, shape: 'wisp' } },
+  archer:    { quiver: { color: 0xc9b27a } },
+  frostmage: { aura: { color: 0x8fd6ff }, motes: { color: 0xbfeaff, n: 5, shape: 'crystal' } },
+};
+
+function attachMobDecor(g, spec, H) {
+  const cfg = MOB_DECOR[spec.id];
+  if (!cfg) return;
+  const fx = g.userData.fx || (g.userData.fx = []);
+  const add = (m) => { m.castShadow = true; g.add(m); return m; };
+
+  if (cfg.horns) {
+    const mtl = decoMat(cfg.horns.color);
+    for (const sx of [-1, 1]) {
+      const horn = new THREE.Mesh(new THREE.ConeGeometry(0.09 * H, 0.36 * H, 5), mtl);
+      horn.position.set(sx * 0.16 * H, 0.92 * H, -0.02 * H);
+      horn.rotation.z = sx * -0.5; horn.rotation.x = -0.25;
+      add(horn);
+    }
+  }
+  if (cfg.spikes) {
+    const mtl = decoMat(cfg.spikes.color);
+    const n = cfg.spikes.n, len = (cfg.spikes.big ? 0.42 : 0.26) * H;
+    for (let i = 0; i < n; i++) {
+      const t = i / Math.max(1, n - 1);
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.06 * H, len * (1 - t * 0.35), 4), mtl);
+      sp.position.set(0, (0.74 - t * 0.3) * H, -0.16 * H);
+      sp.rotation.x = -0.65;
+      add(sp);
+    }
+  }
+  if (cfg.hood) {
+    const hood = new THREE.Mesh(new THREE.ConeGeometry(0.2 * H, 0.34 * H, 6), decoMat(cfg.hood.color));
+    hood.position.set(0, 0.95 * H, -0.02 * H);
+    add(hood);
+  }
+  if (cfg.quiver) {
+    const mtl = decoMat(cfg.quiver.color);
+    const q = new THREE.Mesh(new THREE.CylinderGeometry(0.07 * H, 0.07 * H, 0.42 * H, 6), mtl);
+    q.position.set(-0.12 * H, 0.62 * H, -0.15 * H); q.rotation.x = -0.3; add(q);
+    for (let i = 0; i < 3; i++) {
+      const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.02 * H, 0.18 * H, 4), decoMat(0xe6ddc0));
+      arrow.position.set((-0.15 + i * 0.03) * H, 0.86 * H, -0.15 * H); arrow.rotation.x = -0.3; add(arrow);
+    }
+  }
+  if (cfg.orb) {
+    const orb = new THREE.Mesh(new THREE.IcosahedronGeometry(0.14 * H, 0), decoMat(cfg.orb.color, true));
+    orb.position.set(0.24 * H, 0.55 * H, 0.12 * H); add(orb);
+    fx.push({ obj: orb, type: 'bob', base: 0.55 * H, amp: 0.05 * H, speed: 3, phase: 0 });
+  }
+  if (cfg.aura) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.5 * H, 0.045 * H, 6, 20), decoMat(cfg.aura.color, true));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = cfg.aura.low ? 0.06 * H : 0.1 * H;
+    g.add(ring);
+    fx.push({ obj: ring, type: 'spin', speed: 1.4 });
+  }
+  if (cfg.motes) {
+    const mtl = decoMat(cfg.motes.color, true);
+    for (let i = 0; i < cfg.motes.n; i++) {
+      const a = (i / cfg.motes.n) * Math.PI * 2;
+      let geo;
+      if (cfg.motes.shape === 'crystal') geo = new THREE.OctahedronGeometry(0.07 * H, 0);
+      else if (cfg.motes.shape === 'wisp') geo = new THREE.ConeGeometry(0.05 * H, 0.18 * H, 4);
+      else geo = new THREE.SphereGeometry(0.06 * H, 6, 5);
+      const m = new THREE.Mesh(geo, mtl);
+      const yb = (0.45 + (i % 3) * 0.15) * H;
+      m.position.set(Math.cos(a) * 0.42 * H, yb, Math.sin(a) * 0.42 * H);
+      g.add(m);
+      fx.push({ obj: m, type: 'bob', base: yb, amp: 0.07 * H, speed: 2 + i * 0.3, phase: a });
+    }
+  }
+}
+
+
 function buildSkeleton(spec) {
   const asset = creepAssets[spec.model] || creepAssets.minion || creepAssets.warrior;
   const g = new THREE.Group();
@@ -232,6 +320,7 @@ function buildSkeleton(spec) {
     for (const [k, name] of Object.entries(map)) { if (byName[name]) actions[k] = mixer.clipAction(byName[name]); }
     if (actions.idle) actions.idle.play();
     isGLTF = true;
+    if (!spec.isBoss && spec.id) attachMobDecor(g, spec, targetH);
   } else {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(0.6 * (spec.scale || 1), 0.8 * (spec.scale || 1), 2.2 * (spec.scale || 1), 8), mat(spec.tint || 0xcfd0cc));
     body.position.y = 1.1 * (spec.scale || 1); body.castShadow = true; g.add(body);
@@ -294,6 +383,13 @@ function animateGLTFHero(e, dt, camera) {
   const ud = e.mesh.userData;
   if (e.hpBar) e.hpBar.quaternion.copy(camera.quaternion);
   if (ud.aura) { const on = e.buffE > 0; ud.aura.visible = on; if (on) ud.aura.rotation.z += dt * 4; }
+  if (ud.fx) {
+    e._fxT = (e._fxT || 0) + dt;
+    for (const f of ud.fx) {
+      if (f.type === 'spin') f.obj.rotation.z += dt * f.speed;
+      else if (f.type === 'bob') f.obj.position.y = f.base + Math.sin(e._fxT * f.speed + f.phase) * f.amp;
+    }
+  }
   if (e.flashT > 0) {
     e.flashT -= dt; const k = Math.max(0, e.flashT / 0.18) * 0.8;
     for (const m of e.flashMeshes) if (m.material && m.material.emissive) m.material.emissive.setRGB(k, k, k);
