@@ -151,6 +151,41 @@ function attack(attacker, target) {
   }
   if (isCrit) fx.spawnImpact(target.pos, 0xffe066);
   if ((attacker.lifesteal || 0) > 0 && attacker.alive) attacker.hp = Math.min(attacker.maxHp, attacker.hp + dmg * attacker.lifesteal);
+  if (attacker.team === 'enemy' && target === player && attacker.status) applyStatus(player, attacker.status, attacker.attackDamage);
+}
+
+function applyStatus(p, kind, base) {
+  if (kind === 'poison') {
+    if ((p.poisonT || 0) <= 0) ui.showToast('☠ Отравление!', 1, '#6fdf3a');
+    p.poisonT = 4; p.poisonDps = Math.max(p.poisonDps || 0, base * 0.22);
+  } else if (kind === 'slow') {
+    if ((p.slowT || 0) <= 0) ui.showToast('❄ Замедление!', 1, '#8fd6ff');
+    p.slowT = Math.max(p.slowT || 0, 2.5); p.slowFactor = 0.55;
+  } else if (kind === 'burn') {
+    if ((p.burnT || 0) <= 0) ui.showToast('🔥 Горение!', 1, '#ff6a2a');
+    p.burnT = 3; p.burnDps = Math.max(p.burnDps || 0, base * 0.28);
+  }
+}
+
+function tickStatus(p, dt) {
+  if (!p.alive) return;
+  for (const s of ['poison', 'burn']) {
+    const tk = s + 'T', dk = s + 'Dps', ak = '_' + s + 'Acc', fk = '_' + s + 'Fx';
+    if ((p[tk] || 0) > 0) {
+      p[tk] -= dt;
+      const dmg = (p[dk] || 0) * dt;
+      const wasAlive = p.alive;
+      p.takeDamage(dmg, null);
+      p[ak] = (p[ak] || 0) + dmg;
+      p[fk] = (p[fk] || 0) - dt;
+      if (p[fk] <= 0) {
+        fx.spawnHit(p.pos, s === 'poison' ? 0x6fdf3a : 0xff6a2a);
+        if (p[ak] >= 1) { spawnDamageNumber(p.pos, p[ak], 'taken'); p[ak] = 0; }
+        p[fk] = 0.45;
+      }
+      if (wasAlive && !p.alive) { onKill(p, null); return; }
+    }
+  }
 }
 
 function manualAttack() {
@@ -441,6 +476,7 @@ function mobSpec(type, grade, x, z) {
     name: (g.name ? g.name + ' ' : '') + type.name,
     xp: Math.round(type.xp * (g.hpMul * 0.5 + 0.5)), gold: Math.round(type.gold * (g.hpMul * 0.5 + 0.5)),
     dropChance: g.dropChance, rarityBonus: g.rarityBonus, itemLevel: depth,
+    status: type.status || null,
   };
 }
 function bossSpec(b, x, z) {
@@ -479,7 +515,9 @@ function spawnDungeon() {
     else if (roll > 0.82 - depth * 0.01) grade = 'elite';
     const mpool = BIOME_MOBS[biome.id] || MOB_TYPES.map((t) => t.id);
     const type = MOB_BY_ID[mpool[(Math.random() * mpool.length) | 0]] || MOB_TYPES[0];
-    add(createMob(mobSpec(type, grade, Math.cos(a) * r, Math.sin(a) * r)));
+    const spec = mobSpec(type, grade, Math.cos(a) * r, Math.sin(a) * r);
+    if (biome.id === 'infernal' && spec.attackType !== 'ranged') spec.status = spec.status || 'burn';
+    add(createMob(spec));
   }
   mobsAlive = count;
   const b = bossForDepth(depth);
@@ -721,6 +759,7 @@ function update(dt) {
   if (player.alive) {
     handleMovement(dt);
     tickCooldowns(player, dt); regen(player, dt);
+    tickStatus(player, dt);
     if (player.dash) updateDash(player, dt);
     else if (!player.moving) { const t = nearestEnemy(player.pos, player.attackRange); if (t) { player.mesh.rotation.y = Math.atan2(t.pos.x - player.pos.x, t.pos.z - player.pos.z); attack(player, t); } }
     if (player.buffE > 0) { player._ghostT = (player._ghostT || 0) - dt; if (player._ghostT <= 0) { fx.spawnGhost(player.pos, player.accent); player._ghostT = 0.07; } }

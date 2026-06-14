@@ -189,11 +189,11 @@ export const MOB_TYPES = [
   { id: 'skmage',    name: 'Скелет-маг',    model: 'mage',    maxHp: 80,  attackDamage: 17, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7, xp: 40, gold: 13, attackType: 'ranged', projectile: { speed: 34, color: 0xb96bff, radius: 1.1 } },
   { id: 'scout',     name: 'Скелет-разведчик', model: 'minion',  scale: 0.9,  maxHp: 60,  attackDamage: 11, attackRange: 5,  attackSpeed: 1.3, armor: 0, moveSpeed: 11, xp: 20, gold: 6,  attackType: 'melee', tint: 0x9be29b },
   { id: 'brute',     name: 'Костолом',        model: 'warrior', scale: 1.35, maxHp: 280, attackDamage: 30, attackRange: 5,  attackSpeed: 0.7, armor: 5, moveSpeed: 5.5, xp: 55, gold: 18, attackType: 'melee', tint: 0xff6a4a },
-  { id: 'venom',     name: 'Ядовитый скелет', model: 'minion',  maxHp: 100, attackDamage: 16, attackRange: 5,  attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 28, gold: 9,  attackType: 'melee', tint: 0x6fdf3a },
+  { id: 'venom',     name: 'Ядовитый скелет', model: 'minion',  maxHp: 100, attackDamage: 16, attackRange: 5,  attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 28, gold: 9,  attackType: 'melee', tint: 0x6fdf3a, status: 'poison' },
   { id: 'hellhound', name: 'Адская гончая',   model: 'minion',  scale: 0.95, maxHp: 120, attackDamage: 22, attackRange: 5,  attackSpeed: 1.2, armor: 1, moveSpeed: 12, xp: 38, gold: 12, attackType: 'melee', tint: 0xff8a3a },
   { id: 'revenant',  name: 'Ревенант',        model: 'warrior', maxHp: 200, attackDamage: 26, attackRange: 5,  attackSpeed: 0.85, armor: 4, moveSpeed: 7, xp: 48, gold: 16, attackType: 'melee', tint: 0xb96bff },
   { id: 'archer',    name: 'Скелет-лучник',   model: 'mage',    maxHp: 70,  attackDamage: 15, attackRange: 22, attackSpeed: 1.0, armor: 0, moveSpeed: 8,  xp: 30, gold: 10, attackType: 'ranged', projectile: { speed: 40, color: 0xe0cf88, radius: 0.8 }, tint: 0xc9b27a },
-  { id: 'frostmage', name: 'Ледяной маг',     model: 'mage',    maxHp: 90,  attackDamage: 20, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7,  xp: 42, gold: 14, attackType: 'ranged', projectile: { speed: 32, color: 0x6fc6ff, radius: 1.1 }, tint: 0x8fd6ff },
+  { id: 'frostmage', name: 'Ледяной маг',     model: 'mage',    maxHp: 90,  attackDamage: 20, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7,  xp: 42, gold: 14, attackType: 'ranged', projectile: { speed: 32, color: 0x6fc6ff, radius: 1.1 }, tint: 0x8fd6ff, status: 'slow' },
 ];
 export const MOB_BY_ID = Object.fromEntries(MOB_TYPES.map((t) => [t.id, t]));
 

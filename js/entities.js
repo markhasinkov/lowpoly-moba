@@ -264,6 +264,7 @@ export function createMob(spec) {
   ent.dropRarityMin = spec.dropRarityMin || null;
   ent.gradeColor = spec.gradeColor || null;
   ent.grade = spec.grade || 'trash';
+  ent.status = spec.status || null;
   if (isGLTF) { ent.isGLTF = true; ent.mixer = mixer; ent.actions = actions; ent.currentKey = 'idle'; ent.flashMeshes = flashMeshes; ent.oneShotT = 0; ent._deathStarted = false; }
   return ent;
 }
