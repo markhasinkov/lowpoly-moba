@@ -95,6 +95,15 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #07090f; f
 #help { position: fixed; left: 14px; bottom: 14px; font-size: 11px; line-height: 1.5; color: #8ea4c8; background: rgba(12,16,26,0.6); padding: 8px 12px; border-radius: 10px; z-index: 25; }
 #help b { color: #cfe0ff; }
 
+#potion-hud { font-size: 12px; color: #cfe0ff; background: rgba(12,16,26,0.7); padding: 3px 10px; border-radius: 8px; }
+#potion-hud .hint { color: #7f93b5; }
+#potion-count { color: #6fdc8a; font-weight: 800; }
+#shop-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); display: none; flex-direction: column; gap: 8px; z-index: 50; background: rgba(10,13,22,0.97); border: 1px solid rgba(255,216,99,0.35); border-radius: 16px; padding: 22px 26px; min-width: 320px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+#shop-panel h3 { font-size: 15px; color: #ffd863; margin-bottom: 6px; }
+#shop-panel .shop-item { display: flex; justify-content: space-between; gap: 18px; align-items: center; padding: 9px 12px; border: 1px solid rgba(120,150,200,0.25); border-radius: 10px; background: rgba(20,24,36,0.7); cursor: pointer; }
+#shop-panel .shop-item:hover { border-color: #ffd863; }
+#shop-panel .si-cost { color: #ffd863; font-weight: 700; white-space: nowrap; }
+
 #quest-tracker { position: fixed; top: 110px; right: 14px; width: 210px; background: rgba(12,16,26,0.7); border: 1px solid rgba(120,150,200,0.25); border-radius: 10px; padding: 8px 12px; z-index: 25; font-size: 12px; }
 #quest-tracker h4 { font-size: 12px; color: #ffd863; margin-bottom: 6px; letter-spacing: 0.04em; }
 #quest-tracker .quest { color: #cfe0ff; margin: 3px 0; display: flex; justify-content: space-between; gap: 6px; }

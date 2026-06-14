@@ -11,6 +11,7 @@ import {
 } from './config.js';
 import { generateItem, rollDrop, rarityById } from './loot.js';
 import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
+import { POTION, SHOP_GEAR } from './config.js';
 import { initAudio, resumeAudio, sfx } from './audio.js';
 
 const { scene, renderer, camera } = createScene();
@@ -40,6 +41,8 @@ window.addEventListener('keydown', (e) => {
   keys[k] = true;
   if (k === 'i' && started) { ui.toggleInventory(player); return; }
   if (!started || gameEnded || !player || !player.alive) return;
+  if (k === 'h') { drinkPotion(); return; }
+  if (k === 'v') { ui.toggleShop(player, depth); return; }
   if (['1', '2', '3', '4'].includes(k)) {
     const slot = { '1': 'Q', '2': 'W', '3': 'E', '4': 'R' }[k];
     if (e.shiftKey) levelAbility(player, slot); else castAbility(slot);
@@ -437,7 +440,7 @@ function spawnDungeon() {
 }
 
 function checkClear() {
-  if (mobsAlive <= 0 && !boss) { portalActive = true; player.hp = player.maxHp; player.mana = player.maxMana; sfx('portal'); ui.showToast('Глубина зачищена! Портал открыт ↓', 3); }
+  if (mobsAlive <= 0 && !boss) { portalActive = true; player.hp = player.maxHp; player.mana = player.maxMana; player.potions = POTION.max; sfx('portal'); ui.showToast('Глубина зачищена! Портал открыт ↓ (зелья пополнены)', 3); }
 }
 
 // ---------- floaters (DOM damage numbers) ----------
@@ -466,6 +469,7 @@ function updateFloaters(dt) {
 function tickCooldowns(hero, dt) {
   for (const k of ['cdQ', 'cdW', 'cdE', 'cdR']) hero[k] = Math.max(0, hero[k] - dt);
   if (hero._hitCd > 0) hero._hitCd -= dt;
+  if (hero.potionCd > 0) hero.potionCd -= dt;
   if (hero.buffE > 0) { hero.buffE -= dt; if (hero.buffE <= 0) hero.moveSpeed = hero.baseMoveSpeed; }
   if (hero.slowT > 0) hero.slowT -= dt;
   if (hero.guardT > 0) {
@@ -473,6 +477,31 @@ function tickCooldowns(hero, dt) {
     hero.hp = Math.min(hero.maxHp, hero.hp + (hero.guardHeal || 0) * dt);
     if (hero.guardT <= 0) { hero.armor -= (hero.guardBonus || 0); hero.guardBonus = 0; }
   }
+}
+
+function drinkPotion() {
+  if (!player || !player.alive) return;
+  if (player.potions <= 0) { ui.showToast('Нет зелий', 0.9); return; }
+  if (player.potionCd > 0) { ui.showToast('Зелье ещё не готово', 0.9); return; }
+  if (player.hp >= player.maxHp) { ui.showToast('Здоровье полное', 0.9); return; }
+  player.hp = Math.min(player.maxHp, player.hp + player.maxHp * POTION.heal);
+  player.potions--; player.potionCd = POTION.cooldown;
+  fx.spawnCastFlash(player.pos, 0x4fd66b); sfx('pickup'); refreshHud();
+}
+function buyPotion() {
+  if (player.gold < POTION.cost) { ui.showToast('Мало золота', 1); return; }
+  if (player.potions >= POTION.max) { ui.showToast('Зелья полны', 1); return; }
+  player.gold -= POTION.cost; player.potions++; sfx('pickup'); refreshHud(); ui.renderShop(player, depth);
+}
+function buyGear(tier) {
+  const g = SHOP_GEAR[tier]; if (!g) return;
+  const cost = Math.round(g.cost * (1 + depth * 0.12));
+  if (player.gold < cost) { ui.showToast('Мало золота', 1); return; }
+  player.gold -= cost;
+  const item = generateItem(depth + 1, Math.random, g.bonus);
+  addToInventory(player, item);
+  ui.showToast(`Куплено: ${item.name}`, 1.8, item.color); sfx('pickup');
+  refreshHud(); ui.renderShop(player, depth); if (ui.isInventoryOpen()) ui.refreshInventory(player);
 }
 function regen(e, dt) {
   if (e.hpRegen) e.hp = Math.min(e.maxHp, e.hp + e.hpRegen * dt);
@@ -534,10 +563,13 @@ function startGame(defId) {
   initInventory(player, def);
   recomputeStats(player);
   player.hp = player.maxHp; player.mana = player.maxMana;
+  player.potions = POTION.startCharges; player.potionCd = 0;
   ui.callbacks = {
     onEquip: (item) => { equipItem(player, item); ui.refreshInventory(player); refreshHud(); },
     onUnequip: (slot) => { unequip(player, slot); ui.refreshInventory(player); refreshHud(); },
     onLevelAbility: (key) => levelAbility(player, key),
+    onBuyPotion: () => buyPotion(),
+    onBuyGear: (tier) => buyGear(tier),
   };
   depth = 1;
   initAudio(); resumeAudio(); initQuests();

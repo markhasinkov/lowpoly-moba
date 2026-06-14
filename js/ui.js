@@ -1,4 +1,4 @@
-import { scaleAbility, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, xpForLevel, SLOTS, SLOT_NAMES } from './config.js';
+import { scaleAbility, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, xpForLevel, SLOTS, SLOT_NAMES, POTION, SHOP_GEAR } from './config.js';
 import { statLines } from './loot.js';
 
 const CAST_KEY = { Q: '1', W: '2', E: '3', R: '4' };
@@ -27,7 +27,8 @@ export class UI {
     this.abilityEls = { Q: document.getElementById('ab-Q'), W: document.getElementById('ab-W'), E: document.getElementById('ab-E'), R: document.getElementById('ab-R') };
     this._toastT = 0;
     this._invOpen = false;
-    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {} };
+    this._shopOpen = false;
+    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {} };
     for (const k of ['Q', 'W', 'E', 'R']) {
       const btn = this.abilityEls[k] && this.abilityEls[k].querySelector('.levelup');
       if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevelAbility(k); });
@@ -73,6 +74,23 @@ export class UI {
     this.goldEl.textContent = Math.floor(p.gold);
     if (this.depthEl) this.depthEl.textContent = depth;
     if (this.spEl) { this.spEl.textContent = p.skillPoints; this.spEl.parentElement.style.visibility = p.skillPoints > 0 ? 'visible' : 'hidden'; }
+    const pc = document.getElementById('potion-count'); if (pc) pc.textContent = p.potions != null ? p.potions : 0;
+  }
+
+  isShopOpen() { return this._shopOpen; }
+  toggleShop(p, depth) { this._shopOpen = !this._shopOpen; const el = document.getElementById('shop-panel'); if (el) el.style.display = this._shopOpen ? 'flex' : 'none'; if (this._shopOpen) this.renderShop(p, depth); }
+  renderShop(p, depth) {
+    const el = document.getElementById('shop-panel'); if (!el) return;
+    let html = '<h3>\u0422\u043e\u0440\u0433\u043e\u0432\u0435\u0446 \u2014 \u0437\u043e\u043b\u043e\u0442\u043e: ' + Math.floor(p.gold) + '\ud83d\udcb0</h3>';
+    html += `<div class="shop-item" data-buy="potion"><span>\ud83e\uddea \u0417\u0435\u043b\u044c\u0435 (+${Math.round(POTION.heal*100)}% HP) \u2014 ${p.potions}/${POTION.max}</span><span class="si-cost">${POTION.cost}\ud83d\udcb0</span></div>`;
+    SHOP_GEAR.forEach((g, i) => {
+      const cost = Math.round(g.cost * (1 + depth * 0.12));
+      html += `<div class="shop-item" data-gear="${i}"><span>${g.label} (\u0443\u0440.${depth + 1})</span><span class="si-cost">${cost}\ud83d\udcb0</span></div>`;
+    });
+    html += '<div class="inv-hint">V \u2014 \u0437\u0430\u043a\u0440\u044b\u0442\u044c</div>';
+    el.innerHTML = html;
+    el.querySelectorAll('[data-buy="potion"]').forEach(b => b.addEventListener('click', () => this.callbacks.onBuyPotion()));
+    el.querySelectorAll('[data-gear]').forEach(b => b.addEventListener('click', () => this.callbacks.onBuyGear(parseInt(b.dataset.gear, 10))));
   }
 
   updateAbilities(p) {

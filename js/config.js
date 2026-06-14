@@ -191,3 +191,13 @@ export function bossForDepth(depth) {
   if (depth >= 4) return BOSSES[1];
   return BOSSES[0];
 }
+
+// ===== Consumables & merchant =====
+export const POTION = { heal: 0.4, cooldown: 8, startCharges: 3, max: 6, cost: 60 };
+
+// Gear bundles sold by the merchant. cost scales with depth in main.js.
+export const SHOP_GEAR = [
+  { label: 'Снаряжение (обычный шанс)', bonus: 0, cost: 150 },
+  { label: 'Снаряжение (хороший шанс)', bonus: 1, cost: 350 },
+  { label: 'Снаряжение (отличный шанс)', bonus: 2, cost: 750 },
+];
