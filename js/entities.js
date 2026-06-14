@@ -206,7 +206,7 @@ function createGLTFHero(team, def, asset) {
 }
 
 // ===== Mobs & Bosses (KayKit skeleton models) =====
-const MOB_ATTACK = { minion: '1H_Melee_Attack_Chop', warrior: '2H_Melee_Attack_Chop', mage: 'Spellcast_Shoot' };
+const MOB_ATTACK = { minion: '1H_Melee_Attack_Chop', warrior: '2H_Melee_Attack_Chop', mage: 'Spellcast_Shoot', rogue: 'Dualwield_Melee_Attack_Slice', barbarian: '2H_Melee_Attack_Chop' };
 
 // ===== Per-mob procedural skins — props layered over the 3 base skeletons =====
 function decoMat(c, glow = false) {

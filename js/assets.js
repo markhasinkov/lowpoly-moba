@@ -14,7 +14,7 @@ const loader = new GLTFLoader();
 
 export async function preloadHeroes(onProgress) {
   const ids = Object.keys(CHAR_FILE);
-  const total = ids.length + 3;
+  const total = ids.length + 5;
   let done = 0;
   for (const id of ids) {
     const gltf = await loader.loadAsync(`assets/characters/${CHAR_FILE[id]}.glb`);
@@ -22,7 +22,7 @@ export async function preloadHeroes(onProgress) {
     done++;
     if (onProgress) onProgress(done, total);
   }
-  for (const [key, file] of [['minion', 'Skeleton_Minion'], ['warrior', 'Skeleton_Warrior'], ['mage', 'Skeleton_Mage']]) {
+  for (const [key, file] of [['minion', 'Skeleton_Minion'], ['warrior', 'Skeleton_Warrior'], ['mage', 'Skeleton_Mage'], ['rogue', 'Skeleton_Rogue'], ['barbarian', 'Barbarian']]) {
     try {
       const m = await loader.loadAsync(`assets/characters/${file}.glb`);
       creepAssets[key] = { scene: m.scene, animations: m.animations };
@@ -45,17 +45,22 @@ const NATURE_FILES = {
   stumps: ['stump_round'],
 };
 
-export const natureAssets = { trees: [], rocks: [], bushes: [], mushrooms: [], grass: [], stumps: [] };
+// ---- Dungeon props (KayKit Dungeon Remastered, CC0) ----
+const DUNGEON_FILES = {
+  torches: ['torch_lit'],
+  pillars: ['pillar', 'column'],
+};
+
+export const natureAssets = { trees: [], rocks: [], bushes: [], mushrooms: [], grass: [], stumps: [], torches: [], pillars: [] };
 
 export async function preloadNature(onProgress) {
   const jobs = [];
-  for (const [cat, names] of Object.entries(NATURE_FILES)) {
-    for (const n of names) jobs.push([cat, n]);
-  }
+  for (const [cat, names] of Object.entries(NATURE_FILES)) for (const n of names) jobs.push([cat, n, 'nature']);
+  for (const [cat, names] of Object.entries(DUNGEON_FILES)) for (const n of names) jobs.push([cat, n, 'dungeon']);
   let done = 0;
-  for (const [cat, n] of jobs) {
+  for (const [cat, n, dir] of jobs) {
     try {
-      const gltf = await loader.loadAsync(`assets/nature/${n}.glb`);
+      const gltf = await loader.loadAsync(`assets/${dir}/${n}.glb`);
       const obj = gltf.scene;
       obj.traverse((o) => {
         if (o.isMesh) {

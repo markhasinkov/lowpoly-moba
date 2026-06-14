@@ -188,9 +188,9 @@ export const MOB_TYPES = [
   { id: 'skeleton',  name: 'Скелет',        model: 'minion',  maxHp: 90,  attackDamage: 14, attackRange: 5, attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 22, gold: 6, attackType: 'melee' },
   { id: 'warrior',   name: 'Скелет-воин',   model: 'warrior', maxHp: 150, attackDamage: 20, attackRange: 5, attackSpeed: 0.9, armor: 3, moveSpeed: 7,  xp: 34, gold: 10, attackType: 'melee' },
   { id: 'skmage',    name: 'Скелет-маг',    model: 'mage',    maxHp: 80,  attackDamage: 17, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7, xp: 40, gold: 13, attackType: 'ranged', projectile: { speed: 34, color: 0xb96bff, radius: 1.1 } },
-  { id: 'scout',     name: 'Скелет-разведчик', model: 'minion',  scale: 0.9,  maxHp: 60,  attackDamage: 11, attackRange: 5,  attackSpeed: 1.3, armor: 0, moveSpeed: 11, xp: 20, gold: 6,  attackType: 'melee', tint: 0x9be29b },
+  { id: 'scout',     name: 'Скелет-разведчик', model: 'rogue',  scale: 0.95, maxHp: 60,  attackDamage: 11, attackRange: 5,  attackSpeed: 1.3, armor: 0, moveSpeed: 11, xp: 20, gold: 6,  attackType: 'melee', tint: 0x9be29b },
   { id: 'brute',     name: 'Костолом',        model: 'warrior', scale: 1.35, maxHp: 280, attackDamage: 30, attackRange: 5,  attackSpeed: 0.7, armor: 5, moveSpeed: 5.5, xp: 55, gold: 18, attackType: 'melee', tint: 0xff6a4a },
-  { id: 'venom',     name: 'Ядовитый скелет', model: 'minion',  maxHp: 100, attackDamage: 16, attackRange: 5,  attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 28, gold: 9,  attackType: 'melee', tint: 0x6fdf3a, status: 'poison' },
+  { id: 'venom',     name: 'Ядовитый скелет', model: 'rogue',  maxHp: 100, attackDamage: 16, attackRange: 5,  attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 28, gold: 9,  attackType: 'melee', tint: 0x6fdf3a, status: 'poison' },
   { id: 'hellhound', name: 'Адская гончая',   model: 'minion',  scale: 0.95, maxHp: 120, attackDamage: 22, attackRange: 5,  attackSpeed: 1.2, armor: 1, moveSpeed: 12, xp: 38, gold: 12, attackType: 'melee', tint: 0xff8a3a },
   { id: 'revenant',  name: 'Ревенант',        model: 'warrior', maxHp: 200, attackDamage: 26, attackRange: 5,  attackSpeed: 0.85, armor: 4, moveSpeed: 7, xp: 48, gold: 16, attackType: 'melee', tint: 0xb96bff },
   { id: 'archer',    name: 'Скелет-лучник',   model: 'mage',    maxHp: 70,  attackDamage: 15, attackRange: 22, attackSpeed: 1.0, armor: 0, moveSpeed: 8,  xp: 30, gold: 10, attackType: 'ranged', projectile: { speed: 40, color: 0xe0cf88, radius: 0.8 }, tint: 0xc9b27a },
@@ -203,8 +203,8 @@ export const MOB_BY_ID = Object.fromEntries(MOB_TYPES.map((t) => [t.id, t]));
 export const BOSSES = [
   { id: 'boneLord',  name: 'Костяной Лорд',   grade: 'rare',      model: 'warrior', scale: 2.2, maxHp: 1400, attackDamage: 36, attackRange: 7,  attackSpeed: 0.8, armor: 6,  moveSpeed: 7,  xp: 260, gold: 120, mechanic: 'slam',      dropRarityMin: 'rare' },
   { id: 'necromancer', name: 'Некромант',      grade: 'magic',    model: 'minion',  scale: 2.3, maxHp: 1900, attackDamage: 30, attackRange: 22, attackSpeed: 1.0, armor: 5,  moveSpeed: 7,  xp: 380, gold: 180, mechanic: 'barrage',   dropRarityMin: 'magic',  attackType: 'ranged' },
-  { id: 'infernalKnight', name: 'Адский Рыцарь', grade: 'epic',   model: 'warrior', scale: 2.6, maxHp: 3000, attackDamage: 48, attackRange: 8,  attackSpeed: 0.9, armor: 10, moveSpeed: 8,  xp: 600, gold: 320, mechanic: 'firezones', dropRarityMin: 'epic' },
-  { id: 'deathTitan', name: 'Титан Смерти',    grade: 'legendary', model: 'warrior', scale: 3.2, maxHp: 5200, attackDamage: 58, attackRange: 9,  attackSpeed: 0.85, armor: 14, moveSpeed: 8, xp: 1100, gold: 650, mechanic: 'phases',    dropRarityMin: 'legendary' },
+  { id: 'infernalKnight', name: 'Адский Рыцарь', grade: 'epic',   model: 'barbarian', scale: 2.4, maxHp: 3000, attackDamage: 48, attackRange: 8,  attackSpeed: 0.9, armor: 10, moveSpeed: 8,  xp: 600, gold: 320, mechanic: 'firezones', dropRarityMin: 'epic' },
+  { id: 'deathTitan', name: 'Титан Смерти',    grade: 'legendary', model: 'barbarian', scale: 3.0, maxHp: 5200, attackDamage: 58, attackRange: 9,  attackSpeed: 0.85, armor: 14, moveSpeed: 8, xp: 1100, gold: 650, mechanic: 'phases',    dropRarityMin: 'legendary' },
 ];
 
 export const GRADE_COLOR = { rare: 0x4fd66b, magic: 0x4f9dff, epic: 0xb96bff, legendary: 0xff9b2e };
@@ -384,10 +384,10 @@ export const CLASS_TALENTS = {
 // ===== Biomes — varied zones per depth =====
 export const BIOMES = [
   { id: 'forest',    name: 'Лес',          radius: 58, ground: [0x4a7c3f, 0x36602f, 0x577f43], skyTop: 0x2f6ec4, skyHorizon: 0xcfe6f0, fog: { color: 0xcfe6f0, near: 110, far: 230 }, hemiSky: 0xbfe0ff, hemiGround: 0x4a6b3a, moon: 0xfff0d2, fill: 0x88aaff, density: 150, cats: ['trees', 'rocks', 'bushes', 'grass', 'mushrooms'] },
-  { id: 'crypt',     name: 'Склеп',        radius: 40, ground: [0x3a3a44, 0x2a2a32, 0x44414f], skyTop: 0x0a0a14, skyHorizon: 0x241f33, fog: { color: 0x14101c, near: 36, far: 110 }, hemiSky: 0x8a86b0, hemiGround: 0x201c2a, moon: 0xb8a6ff, fill: 0x6655aa, density: 55, cats: ['rocks', 'mushrooms'] },
+  { id: 'crypt',     name: 'Склеп',        radius: 40, ground: [0x3a3a44, 0x2a2a32, 0x44414f], skyTop: 0x0a0a14, skyHorizon: 0x241f33, fog: { color: 0x14101c, near: 36, far: 110 }, hemiSky: 0x8a86b0, hemiGround: 0x201c2a, moon: 0xb8a6ff, fill: 0x6655aa, density: 55, cats: ['rocks', 'mushrooms', 'torches', 'pillars'] },
   { id: 'wasteland', name: 'Пустошь',     radius: 76, ground: [0x6b5a3a, 0x554629, 0x7a6440], skyTop: 0x7a4a2a, skyHorizon: 0xd9a86a, fog: { color: 0xc99a63, near: 130, far: 280 }, hemiSky: 0xffd9a0, hemiGround: 0x6b5333, moon: 0xffe0b0, fill: 0xff9a55, density: 70, cats: ['rocks', 'stumps', 'trees'] },
   { id: 'frost',     name: 'Мерзлота',     radius: 54, ground: [0xa9c4d6, 0x8aa6bd, 0xc6dcec], skyTop: 0x2a5a8a, skyHorizon: 0xd6ecf7, fog: { color: 0xd6ecf7, near: 90, far: 210 }, hemiSky: 0xd6ecff, hemiGround: 0x6a8499, moon: 0xffffff, fill: 0x9ac4ff, density: 85, cats: ['trees', 'rocks'] },
-  { id: 'infernal',  name: 'Преисподняя', radius: 64, ground: [0x3a1f1f, 0x2a1414, 0x4a2424], skyTop: 0x1a0606, skyHorizon: 0x5a1a10, fog: { color: 0x2a0c08, near: 56, far: 160 }, hemiSky: 0xff8a5c, hemiGround: 0x2a1010, moon: 0xff7040, fill: 0xff4020, density: 75, cats: ['rocks', 'stumps'] },
+  { id: 'infernal',  name: 'Преисподняя', radius: 64, ground: [0x3a1f1f, 0x2a1414, 0x4a2424], skyTop: 0x1a0606, skyHorizon: 0x5a1a10, fog: { color: 0x2a0c08, near: 56, far: 160 }, hemiSky: 0xff8a5c, hemiGround: 0x2a1010, moon: 0xff7040, fill: 0xff4020, density: 75, cats: ['rocks', 'stumps', 'torches', 'pillars'] },
 ];
 export function biomeForDepth(depth) { return BIOMES[(depth - 1) % BIOMES.length]; }
 export const BIOME_MOBS = {

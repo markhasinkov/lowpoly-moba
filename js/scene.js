@@ -73,6 +73,38 @@ function mat(color) {
   return new THREE.MeshStandardMaterial({ color, flatShading: true, roughness: 0.9, metalness: 0.05 });
 }
 
+// Procedural grayscale detail texture for the ground (modulates the vertex colors).
+function makeGroundTexture(biome) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 256;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#d8d8d8'; ctx.fillRect(0, 0, 256, 256);
+  for (let i = 0; i < 1500; i++) {
+    const g = 90 + Math.random() * 150 | 0;
+    ctx.globalAlpha = 0.05 + Math.random() * 0.16;
+    ctx.fillStyle = `rgb(${g},${g},${g})`;
+    const r = 1 + Math.random() * 4.5;
+    ctx.beginPath(); ctx.arc(Math.random() * 256, Math.random() * 256, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,1)';
+  for (let i = 0; i < 600; i++) { ctx.globalAlpha = 0.08 + Math.random() * 0.18; ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 1.5); }
+  ctx.globalAlpha = 1;
+  if (biome.id === 'crypt' || biome.id === 'infernal' || biome.id === 'wasteland') {
+    ctx.strokeStyle = 'rgba(0,0,0,0.32)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+      let x = Math.random() * 256, y = Math.random() * 256;
+      ctx.beginPath(); ctx.moveTo(x, y);
+      for (let s = 0; s < 4; s++) { x += (Math.random() - 0.5) * 70; y += (Math.random() - 0.5) * 70; ctx.lineTo(x, y); }
+      ctx.stroke();
+    }
+  } else if (biome.id === 'frost') {
+    for (let i = 0; i < 320; i++) { ctx.globalAlpha = 0.25 + Math.random() * 0.5; ctx.fillStyle = '#ffffff'; ctx.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 1.5); }
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 function disposeGroup(g) {
   g.traverse((o) => {
     if (o.geometry) o.geometry.dispose && o.geometry.dispose();
@@ -133,7 +165,9 @@ function buildZone(scene, biome) {
   }
   groundGeo.setAttribute('color', new THREE.Float32BufferAttribute(gcolors, 3));
   groundGeo.computeVertexNormals();
-  const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ vertexColors: true, flatShading: true, roughness: 1 }));
+  const gTex = makeGroundTexture(biome);
+  gTex.repeat.set(Math.max(4, span / 9), Math.max(4, span / 9));
+  const ground = new THREE.Mesh(groundGeo, new THREE.MeshStandardMaterial({ map: gTex, vertexColors: true, flatShading: true, roughness: 1 }));
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true;
   zoneGroup.add(ground);
 
@@ -178,7 +212,7 @@ function buildZone(scene, biome) {
       if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 9) continue;
       const cat = pick(cats, rng);
       const proto = pick(N[cat], rng);
-      const scale = cat === 'trees' ? 4.0 + rng() * 3.0 : cat === 'rocks' ? 2.4 + rng() * 2.6 : 3.0 + rng() * 2.2;
+      const scale = cat === 'trees' ? 4.0 + rng() * 3.0 : cat === 'rocks' ? 2.4 + rng() * 2.6 : cat === 'pillars' ? 3.0 + rng() * 1.6 : cat === 'torches' ? 2.4 + rng() * 0.8 : 3.0 + rng() * 2.2;
       const g = new THREE.Group();
       g.add(proto.clone(true));
       g.position.set(x, 0, z); g.scale.setScalar(scale); g.rotation.y = rng() * Math.PI * 2;
