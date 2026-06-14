@@ -122,3 +122,9 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #07090f; f
 .inv-slot.upgrade::after { content: '↑'; position: absolute; margin: -34px 0 0 26px; font-size: 11px; color: #6fdc8a; font-weight: 800; }
 .inv-slot { position: relative; }
 .talent-sub { font-size: 14px; color: #9fb4d8; margin-bottom: 18px; letter-spacing: 0.03em; }
+#forge-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); display: none; flex-direction: column; gap: 8px; z-index: 50; background: rgba(10,13,22,0.97); border: 1px solid rgba(255,140,80,0.4); border-radius: 16px; padding: 22px 26px; min-width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.6); }
+#forge-panel h3 { font-size: 14px; color: #ff9b6b; margin-bottom: 4px; }
+#forge-panel .shop-item { border-left: 3px solid var(--rc, #888); }
+.forge-hint { font-size: 11px; color: #8ea4c8; margin-bottom: 6px; }
+.forge-where { color: #8ea4c8; font-size: 11px; }
+#npc-prompt { position: fixed; bottom: 168px; left: 50%; transform: translateX(-50%); display: none; z-index: 40; background: rgba(10,13,22,0.85); border: 1px solid rgba(255,216,99,0.5); color: #ffe9b0; font-size: 14px; font-weight: 700; padding: 7px 16px; border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,0.5); }

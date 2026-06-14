@@ -28,7 +28,9 @@ export class UI {
     this._toastT = 0;
     this._invOpen = false;
     this._shopOpen = false;
-    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {}, onSell: () => {}, isUpgrade: () => false };
+    this._forgeOpen = false;
+    this.npcPrompt = document.getElementById('npc-prompt');
+    this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {}, onSell: () => {}, isUpgrade: () => false, onSharpen: () => {} };
     for (const k of ['Q', 'W', 'E', 'R']) {
       const btn = this.abilityEls[k] && this.abilityEls[k].querySelector('.levelup');
       if (btn) btn.addEventListener('click', (e) => { e.stopPropagation(); this.callbacks.onLevelAbility(k); });
@@ -92,6 +94,30 @@ export class UI {
     el.querySelectorAll('[data-buy="potion"]').forEach(b => b.addEventListener('click', () => this.callbacks.onBuyPotion()));
     el.querySelectorAll('[data-gear]').forEach(b => b.addEventListener('click', () => this.callbacks.onBuyGear(parseInt(b.dataset.gear, 10))));
   }
+
+  isForgeOpen() { return this._forgeOpen; }
+  toggleForge(p, depth) { this._forgeOpen = !this._forgeOpen; const el = document.getElementById('forge-panel'); if (el) el.style.display = this._forgeOpen ? 'flex' : 'none'; if (this._forgeOpen) this.renderForge(p, depth); }
+  renderForge(p, depth) {
+    const el = document.getElementById('forge-panel'); if (!el) return;
+    const weapons = [];
+    if (p.equipment.weapon) weapons.push({ it: p.equipment.weapon, where: 'надето' });
+    p.inventory.forEach((it) => { if (it.slot === 'weapon') weapons.push({ it, where: 'сумка' }); });
+    let html = '<h3>🔨 Кузница — золото: ' + Math.floor(p.gold) + '💰</h3>';
+    html += '<div class="forge-hint">Заточка усиливает оружие (+урон, +крит). Макс +10.</div>';
+    if (!weapons.length) html += '<div class="shop-item"><span>Нет оружия для заточки</span></div>';
+    weapons.forEach((w, i) => {
+      const lvl = w.it.sharpen || 0;
+      const cost = Math.round(70 * (lvl + 1) * (1 + depth * 0.12));
+      const max = lvl >= 10;
+      html += `<div class="shop-item" data-sharp="${i}" style="--rc:${w.it.color}"><span>${w.it.icon} ${w.it.name} <span class="forge-where">(${w.where}, урон ${Math.round(w.it.stats.attackDamage || 0)})</span></span><span class="si-cost">${max ? 'МАКС' : cost + '💰'}</span></div>`;
+    });
+    html += '<div class="inv-hint">F — закрыть</div>';
+    el.innerHTML = html;
+    const list = weapons.map(w => w.it);
+    el.querySelectorAll('[data-sharp]').forEach(b => b.addEventListener('click', () => { const it = list[parseInt(b.dataset.sharp, 10)]; if (it) this.callbacks.onSharpen(it); }));
+  }
+  showNpcPrompt(text) { const el = this.npcPrompt || document.getElementById('npc-prompt'); if (!el) return; el.textContent = text; el.style.display = 'block'; }
+  hideNpcPrompt() { const el = this.npcPrompt || document.getElementById('npc-prompt'); if (el) el.style.display = 'none'; }
 
   updateAbilities(p) {
     if (!p.abilities) return;

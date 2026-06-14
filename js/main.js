@@ -28,6 +28,9 @@ let player = null;
 let boss = null;
 const secretChests = [];
 let secretBoss = null, secretRevealed = false;
+const npcs = [];
+let nearNpc = null;
+let sageUsedDepth = 0;
 let quests = [];
 let depth = 1, mobsAlive = 0, portalActive = false;
 let started = false, gameEnded = false, matchTime = 0, hudTimer = 0;
@@ -49,6 +52,7 @@ window.addEventListener('keydown', (e) => {
   if (!started || gameEnded || !player || !player.alive) return;
   if (k === 'h') { drinkPotion(); return; }
   if (k === 'v') { ui.toggleShop(player, depth); return; }
+  if (k === 'f') { interactNpc(); return; }
   if (['1', '2', '3', '4'].includes(k)) {
     const slot = { '1': 'Q', '2': 'W', '3': 'E', '4': 'R' }[k];
     if (e.shiftKey) levelAbility(player, slot); else castAbility(slot);
@@ -459,6 +463,8 @@ function clearEnemies() {
   fireZones.length = 0; pendingStrikes.length = 0;
   for (const c of secretChests) scene.remove(c.mesh);
   secretChests.length = 0; secretBoss = null; secretRevealed = false;
+  for (const n of npcs) scene.remove(n.mesh);
+  npcs.length = 0; nearNpc = null; ui.hideNpcPrompt();
 }
 
 function mobSpec(type, grade, x, z) {
@@ -501,6 +507,101 @@ function sellItem(item) {
   ui.refreshInventory(player); refreshHud();
 }
 
+function makeLabelSprite(text, color) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = 'rgba(8,10,18,0.66)';
+  ctx.beginPath(); ctx.roundRect(6, 8, 244, 48, 10); ctx.fill();
+  ctx.font = 'bold 30px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = color; ctx.fillText(text, 128, 34);
+  const tex = new THREE.CanvasTexture(c); tex.minFilter = THREE.LinearFilter;
+  const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+  spr.scale.set(8, 2, 1);
+  return spr;
+}
+
+const NPC_DEFS = {
+  merchant:   { color: 0xffcc44, body: 0xb5862a, label: '🛒 Торговец' },
+  blacksmith: { color: 0xff7043, body: 0x6b3a2a, label: '🔨 Кузнец' },
+  sage:       { color: 0x9f8fff, body: 0x4a3f7a, label: '✨ Мудрец' },
+};
+
+function createNpc(kind, x, z) {
+  const d = NPC_DEFS[kind];
+  const g = new THREE.Group();
+  const m = (c, e) => new THREE.MeshStandardMaterial({ color: c, emissive: e || 0x000000, emissiveIntensity: e ? 0.5 : 0, flatShading: true, roughness: 0.7, metalness: 0.1 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.2, 2.6, 8), m(d.body));
+  body.position.y = 1.3; body.castShadow = true; g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.66, 12, 10), m(0xe8c8a0));
+  head.position.y = 3.0; head.castShadow = true; g.add(head);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 26, 6), new THREE.MeshBasicMaterial({ color: d.color, transparent: true, opacity: 0.22 }));
+  beam.position.y = 13; g.add(beam);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.13, 8, 26), new THREE.MeshBasicMaterial({ color: d.color, transparent: true, opacity: 0.85 }));
+  ring.rotation.x = -Math.PI / 2; ring.position.y = 0.15; g.add(ring);
+  const label = makeLabelSprite(d.label, '#ffffff'); label.position.y = 4.4; g.add(label);
+  g.position.set(x, 0, z);
+  scene.add(g);
+  npcs.push({ kind, mesh: g, pos: new THREE.Vector3(x, 0, z), label: d.label, ring, _bob: Math.random() * 6 });
+}
+
+function spawnNpcs() {
+  createNpc('merchant', -9, 4);
+  createNpc('blacksmith', 9, 4);
+  createNpc('sage', 0, -8);
+}
+
+function updateNpcs(dt) {
+  let near = null, bd = 6;
+  for (const n of npcs) {
+    n._bob += dt * 2;
+    n.mesh.position.y = Math.max(0, Math.sin(n._bob) * 0.25);
+    if (n.ring) n.ring.rotation.z += dt * 1.2;
+    if (player && player.alive) {
+      const d = Math.hypot(player.pos.x - n.pos.x, player.pos.z - n.pos.z);
+      if (d < bd) { bd = d; near = n; }
+    }
+  }
+  nearNpc = near;
+  if (near) ui.showNpcPrompt(`F — ${near.label}`);
+  else ui.hideNpcPrompt();
+}
+
+function interactNpc() {
+  if (!nearNpc) return;
+  if (nearNpc.kind === 'merchant') ui.toggleShop(player, depth);
+  else if (nearNpc.kind === 'blacksmith') ui.toggleForge(player, depth);
+  else if (nearNpc.kind === 'sage') sageBless();
+}
+
+function sageBless() {
+  if (sageUsedDepth === depth) { ui.showToast('Мудрец уже благословил тебя на этой глубине', 1.4, '#9f8fff'); return; }
+  sageUsedDepth = depth;
+  player.hp = player.maxHp; player.mana = player.maxMana;
+  player.potions = Math.min(POTION.max, (player.potions || 0) + 2);
+  fx.spawnCastFlash(player.pos, 0x9f8fff); sfx('quest');
+  ui.showToast('✨ Благословение Мудреца: полное лечение + 2 зелья', 2.4, '#9f8fff');
+  refreshHud();
+}
+
+function sharpenItem(item) {
+  if (!item || item.slot !== 'weapon') { ui.showToast('Затачивается только оружие', 1.2); return; }
+  const lvl = item.sharpen || 0;
+  if (lvl >= 10) { ui.showToast('Максимальная заточка (+10)', 1.2); return; }
+  const cost = Math.round(70 * (lvl + 1) * (1 + depth * 0.12));
+  if (player.gold < cost) { ui.showToast('Мало золота', 1); return; }
+  player.gold -= cost;
+  item.sharpen = lvl + 1;
+  const addDmg = Math.max(3, Math.round((item.ilvl || depth) * 0.7));
+  item.stats.attackDamage = (item.stats.attackDamage || 0) + addDmg;
+  item.stats.critChance = Math.round(((item.stats.critChance || 0) + 0.005) * 1000) / 1000;
+  item.name = item.name.replace(/ \+\d+$/, '') + ` +${item.sharpen}`;
+  recomputeStats(player);
+  sfx('crit'); fx.spawnCastFlash(player.pos, 0xffaa33);
+  ui.showToast(`Заточено: ${item.name} (+${addDmg} урон)`, 1.8, item.color);
+  ui.renderForge(player, depth); refreshHud();
+  if (ui.isInventoryOpen()) ui.refreshInventory(player);
+}
+
 function spawnDungeon() {
   clearEnemies();
   portalActive = false;
@@ -526,6 +627,7 @@ function spawnDungeon() {
   sfx('boss');
   ui.showToast(`${biome.name} — глубина ${depth}. ${b.name} ждёт. Зачисти и войди в портал.`, 4);
   maybeSpawnSecrets();
+  spawnNpcs();
   refreshHud();
   setQuestDepth();
 }
@@ -723,6 +825,7 @@ function startGame(defId) {
     onBuyGear: (tier) => buyGear(tier),
     onSell: (item) => sellItem(item),
     isUpgrade: (item) => isUpgrade(player, item),
+    onSharpen: (item) => sharpenItem(item),
   };
   depth = 1;
   initAudio(); resumeAudio(); initQuests();
@@ -780,6 +883,7 @@ function update(dt) {
   updateHazards(dt);
   updateGroundItems(dt);
   updateSecrets(dt);
+  updateNpcs(dt);
   fx.update(dt, entities, applyDamage);
 
   hudTimer -= dt;
