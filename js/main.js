@@ -52,10 +52,16 @@ window.addEventListener('keydown', (e) => {
   }
 });
 window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
+const canvas = renderer.domElement;
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+let dragLook = false;
 window.addEventListener('mousedown', (e) => {
-  if (!started || gameEnded || !player || !player.alive) return;
-  if (e.button === 0) manualAttack();
+  if (!started || gameEnded) return;
+  if (e.button === 2) { dragLook = true; return; }
+  if (e.button === 0 && player && player.alive) manualAttack();
 });
+window.addEventListener('mouseup', (e) => { if (e.button === 2) dragLook = false; });
+window.addEventListener('mousemove', (e) => { if (dragLook) camYaw -= e.movementX * 0.005; });
 
 function lerpAngle(a, b, t) {
   let d = ((b - a + Math.PI) % (Math.PI * 2)) - Math.PI;
@@ -536,22 +542,20 @@ function regen(e, dt) {
 function handleMovement(dt) {
   if (player.dash) return;
   const f = new THREE.Vector3(Math.sin(camYaw), 0, Math.cos(camYaw));
-  const r = new THREE.Vector3(f.z, 0, -f.x);
+  const r = new THREE.Vector3(-f.z, 0, f.x);
+  player.mesh.rotation.y = camYaw; // character faces where the camera looks
   const mv = new THREE.Vector3();
   if (keys['w']) mv.add(f);
   if (keys['s']) mv.sub(f);
   if (keys['d']) mv.add(r);
   if (keys['a']) mv.sub(r);
-  let turning = false;
-  if (keys['q']) { camYaw += 1.8 * dt; turning = true; }
-  if (keys['e']) { camYaw -= 1.8 * dt; turning = true; }
+  if (keys['q']) camYaw += 1.8 * dt;
+  if (keys['e']) camYaw -= 1.8 * dt;
   if (mv.lengthSq() > 0.001) {
     mv.normalize();
     const spd = player.slowT > 0 ? player.moveSpeed * (player.slowFactor || 0.5) : player.moveSpeed;
     player.pos.x += mv.x * spd * dt; player.pos.z += mv.z * spd * dt;
     clampArena(player.pos);
-    const heading = Math.atan2(mv.x, mv.z);
-    player.mesh.rotation.y = heading;
     player.moving = true;
   } else {
     player.moving = false;
@@ -601,7 +605,7 @@ function startGame(defId) {
   camYaw = 0;
   ui.hideClassSelect();
   refreshHud();
-  ui.showToast(`Ты — ${def.name}. WASD двигаться, Q/E поворот, ЛКМ атака, 1-4 умения, I инвентарь.`, 6);
+  ui.showToast(`Ты — ${def.name}. WASD — движение, ПКМ (зажать+вести) — камера, ЛКМ — атака, 1-4 — умения, I — инвентарь, H — зелье, V — торговец.`, 7);
   clock.getDelta();
   started = true;
 }
