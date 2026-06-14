@@ -298,6 +298,7 @@ export class UI {
       if (ev.kind === 'cursed') { ctx.beginPath(); ctx.strokeStyle = 'rgba(150,90,200,0.85)'; ctx.lineWidth = 1.5; ctx.arc(ex, ez, 10 * sc, 0, Math.PI * 2); ctx.stroke(); }
       else if (ev.kind === 'altar') { ctx.beginPath(); ctx.fillStyle = ev.done ? '#666' : '#ffe066'; ctx.arc(ex, ez, 3.2, 0, Math.PI * 2); ctx.fill(); }
       else if (ev.kind === 'ambush' && !ev.done) { ctx.beginPath(); ctx.strokeStyle = '#ff4030'; ctx.lineWidth = 1.6; ctx.arc(ex, ez, 3.5, 0, Math.PI * 2); ctx.stroke(); }
+      else if (ev.kind === 'rescue' && !ev.done) { ctx.fillStyle = '#6ad0ff'; ctx.font = 'bold 9px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('!', ex, ez); ctx.beginPath(); ctx.strokeStyle = '#6ad0ff'; ctx.lineWidth = 1.4; ctx.arc(ex, ez, 4, 0, Math.PI * 2); ctx.stroke(); }
     }
 
     // enemies

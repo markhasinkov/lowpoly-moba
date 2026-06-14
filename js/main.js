@@ -36,6 +36,8 @@ const npcs = [];
 let nearNpc = null;
 let sageUsedDepth = 0;
 let quests = [];
+let depthQuests = [];
+let depthKills = 0;
 let depth = 1, mobsAlive = 0, portalActive = false;
 let started = false, gameEnded = false, matchTime = 0, hudTimer = 0;
 const clock = new THREE.Clock();
@@ -278,7 +280,9 @@ function onKill(victim, killer) {
     sfx('death');
     if (item && item.rarity === 'legendary') questProgress('legend');
     if (victim.grade && victim.grade !== 'trash') questProgress('champ');
-    if (victim.isBoss) questProgress('boss');
+    if (victim.isBoss) { questProgress('boss'); depthQuestProgress('d_boss'); }
+    else depthQuestProgress('d_slay');
+    if (victim._rescue && !victim._rescue.done) { victim._rescue.guards--; if (victim._rescue.guards <= 0) completeRescue(victim._rescue); }
     victim.dying = true; victim.deathT = 0;
     if (victim.isBoss) {
       if (victim === boss) { boss = null; ui.updateBossBar(null); }
@@ -297,7 +301,7 @@ function initQuests() {
     { id: 'depth', desc: 'Достичь глубины 5', type: 'depth', target: 5, progress: 1, done: false, gold: 350, xp: 600 },
     { id: 'legend', desc: 'Найти легендарный предмет', type: 'legend', target: 1, progress: 0, done: false, gold: 600, xp: 1000 },
   ];
-  if (ui.renderQuests) ui.renderQuests(quests);
+  refreshQuests();
 }
 function completeQuest(q) {
   q.done = true; player.gold += q.gold; grantXp(q.xp);
@@ -305,11 +309,43 @@ function completeQuest(q) {
 }
 function questProgress(type, amount = 1) {
   for (const q of quests) { if (q.done || q.type !== type) continue; q.progress = Math.min(q.target, q.progress + amount); if (q.progress >= q.target) completeQuest(q); }
-  if (ui.renderQuests) ui.renderQuests(quests);
+  refreshQuests();
 }
 function setQuestDepth() {
   for (const q of quests) { if (q.done || q.type !== 'depth') continue; q.progress = Math.max(q.progress, depth); if (q.progress >= q.target) completeQuest(q); }
-  if (ui.renderQuests) ui.renderQuests(quests);
+  refreshQuests();
+}
+
+function refreshQuests() { if (ui.renderQuests) ui.renderQuests([...depthQuests, ...quests]); }
+
+// ---------- per-depth interactive quests ----------
+function completeDepthQuest(q) {
+  if (q.done) return;
+  q.done = true;
+  const gold = Math.round(q.gold * (1 + depth * 0.12));
+  player.gold += gold; grantXp(q.xp);
+  ui.showToast(`✔ ${q.desc} — +${gold}💰`, 2.6, '#7fe0a8'); sfx('quest');
+  refreshHud(); refreshQuests();
+}
+function depthQuestProgress(type, amount = 1) {
+  let changed = false;
+  for (const q of depthQuests) {
+    if (q.done || q.type !== type) continue;
+    q.progress = Math.min(q.target, q.progress + amount);
+    changed = true;
+    if (q.progress >= q.target) completeDepthQuest(q);
+  }
+  if (changed) refreshQuests();
+}
+function makeDepthQuests() {
+  depthQuests = [];
+  depthKills = 0;
+  const b = bossForDepth(depth);
+  depthQuests.push({ id: 'd_boss', desc: `Срази босса: ${b.name}`, type: 'd_boss', target: 1, progress: 0, done: false, gold: 120, xp: 200 });
+  const killN = 5 + Math.floor(depth * 1.5);
+  depthQuests.push({ id: 'd_slay', desc: `Убей ${killN} врагов`, type: 'd_slay', target: killN, progress: 0, done: false, gold: 90, xp: 140 });
+  if (Math.random() < 0.6) spawnRescue();
+  refreshQuests();
 }
 
 // ---------- abilities ----------
@@ -896,6 +932,7 @@ function spawnDungeon() {
   spawnEvents();
   refreshHud();
   setQuestDepth();
+  makeDepthQuests();
 }
 
 function secretBossForDepth(d) {
@@ -1081,13 +1118,15 @@ function updateEvents(dt) {
       if (!ev.done && player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < 7) {
         ev.done = true; triggerAmbush(ev); scene.remove(ev.mesh);
       }
-    } else {
+    } else if (ev.kind === 'cursed') {
       if (ev.parts.shards) for (const sh of ev.parts.shards) sh.rotation.y += dt * 0.8;
       ev.tick -= dt;
       if (player.alive && Math.hypot(player.pos.x - ev.pos.x, player.pos.z - ev.pos.z) < 10) {
         player.slowT = Math.max(player.slowT || 0, 0.4); player.slowFactor = 0.72;
         if (ev.tick <= 0) { applyDamage(player, Math.round(6 + depth * 2), null); fx.spawnHit(player.pos, 0x7a3aaa); ev.tick = 0.6; }
       }
+    } else if (ev.kind === 'rescue') {
+      if (ev.parts && ev.parts.captive) { ev.parts.captive.rotation.y += dt; ev.parts.captive.position.y = 1.2 + Math.sin(matchTime * 3) * 0.12; }
     }
   }
 }
@@ -1095,6 +1134,69 @@ function updateEvents(dt) {
 function clearEvents() {
   for (const ev of mapEvents) scene.remove(ev.mesh);
   mapEvents.length = 0;
+}
+
+// ---------- captive rescue event ----------
+function buildCaptive(x, z) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const captive = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.65, 1.6, 8),
+    new THREE.MeshStandardMaterial({ color: 0x6ad0ff, emissive: 0x2a7aaa, emissiveIntensity: 0.5, flatShading: true }));
+  body.position.y = 0.9; captive.add(body);
+  const head = new THREE.Mesh(new THREE.IcosahedronGeometry(0.42, 0),
+    new THREE.MeshStandardMaterial({ color: 0xf0d6b0, flatShading: true }));
+  head.position.y = 1.9; captive.add(head);
+  captive.position.y = 0; g.add(captive);
+  // cage bars
+  const barMat = new THREE.MeshStandardMaterial({ color: 0x555a66, flatShading: true, metalness: 0.5, roughness: 0.5 });
+  const bars = [];
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3, 5), barMat);
+    bar.position.set(Math.cos(a) * 1.5, 1.5, Math.sin(a) * 1.5); bar.castShadow = true; g.add(bar); bars.push(bar);
+  }
+  scene.add(g);
+  return { mesh: g, captive, bars };
+}
+
+function spawnRescue() {
+  let x = 0, z = 0, ok = false;
+  for (let tries = 0; tries < 14; tries++) {
+    const a = Math.random() * Math.PI * 2;
+    const dist = (0.35 + Math.random() * 0.4) * arenaRadiusAt(a);
+    x = Math.cos(a) * dist; z = Math.sin(a) * dist;
+    if (Math.hypot(x, z) < 18) continue;
+    if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 14) continue;
+    ok = true; break;
+  }
+  if (!ok) return;
+  const built = buildCaptive(x, z);
+  const biome = biomeForDepth(depth);
+  const pool = BIOME_MOBS[biome.id] || MOB_TYPES.map((t) => t.id);
+  const n = 4 + ((Math.random() * 2) | 0);
+  const ev = { kind: 'rescue', mesh: built.mesh, parts: { captive: built.captive, bars: built.bars }, pos: new THREE.Vector3(x, 0, z), done: false, guards: n };
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const ex = x + Math.cos(a) * 6, ez = z + Math.sin(a) * 6;
+    const grade = i === 0 ? 'elite' : 'trash';
+    const type = MOB_BY_ID[pool[(Math.random() * pool.length) | 0]] || MOB_TYPES[0];
+    const m = add(createMob(mobSpec(type, grade, ex, ez)));
+    m._rescue = ev; mobsAlive++;
+  }
+  mapEvents.push(ev);
+  depthQuests.push({ id: 'd_rescue', desc: 'Спаси пленника (перебей стражу)', type: 'd_rescue', target: 1, progress: 0, done: false, gold: 150, xp: 240 });
+  ui.showToast('🔓 Пленник в клетке! Перебей стражу, чтобы освободить.', 3.5, '#6ad0ff');
+}
+
+function completeRescue(ev) {
+  if (ev.done) return;
+  ev.done = true;
+  for (const bar of ev.parts.bars) ev.mesh.remove(bar);
+  fx.spawnCastFlash(ev.pos, 0x6ad0ff); sfx('quest');
+  ui.showToast('✨ Пленник спасён!', 2.6, '#6ad0ff');
+  for (const q of depthQuests) { if (q.type === 'd_rescue' && !q.done) { q.progress = q.target; completeDepthQuest(q); } }
+  setTimeout(() => { scene.remove(ev.mesh); }, 2500);
 }
 
 // ---------- floaters (DOM damage numbers) ----------
