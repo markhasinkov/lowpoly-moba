@@ -28,6 +28,7 @@ export function recomputeStats(player) {
     for (const [k, v] of Object.entries(it.stats)) add(k, v);
   }
   if (player.talentStats) for (const [k, v] of Object.entries(player.talentStats)) add(k, v);
+  if (player.tempStats) for (const [k, v] of Object.entries(player.tempStats)) add(k, v);
 
   const prevMaxHp = player.maxHp || b.maxHp;
   const prevMaxMana = player.maxMana || b.maxMana;

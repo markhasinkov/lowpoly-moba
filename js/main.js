@@ -28,6 +28,7 @@ const fireZones = [];
 const traps = [];
 const destructibles = [];
 const mapEvents = [];
+const debris = [];
 let player = null;
 let boss = null;
 const secretChests = [];
@@ -673,7 +674,7 @@ function spawnDestructibles() {
 
 function breakDestructible(d) {
   const col = d.type === 'crystal' ? 0x8f6bff : 0xc89a5a;
-  fx.spawnImpact(d.pos, col); fx.spawnCastFlash(d.pos, col);
+  fx.spawnImpact(d.pos, col); fx.spawnCastFlash(d.pos, col); spawnDebris(d.pos, col, 7);
   sfx('death');
   const goldBase = d.type === 'crystal' ? 30 : 12;
   const gold = Math.round((goldBase + Math.random() * goldBase) * (1 + depth * 0.15));
@@ -712,17 +713,44 @@ function damageDestructiblesRadius(pos, r, dmg) {
 
 function updateDestructibles(dt) {
   for (const d of destructibles) {
-    if (d.spin) d.mesh.children[0].rotation.y += dt * 1.4;
+    if (d.spin) { d.mesh.children[0].rotation.y += dt * 1.4; d.mesh.children[0].position.y = 1.5 + Math.sin(matchTime * 2 + d.pos.x) * 0.18; }
     if (d.flashT > 0) {
       d.flashT -= dt; const k = Math.max(0, d.flashT / 0.16);
       for (const p of d.flashParts) if (p.material && p.material.emissive) p.material.emissive.setRGB(k, k, k);
     }
   }
+  updateDebris(dt);
 }
 
 function clearDestructibles() {
   for (const d of destructibles) scene.remove(d.mesh);
   destructibles.length = 0;
+  for (const d of debris) scene.remove(d.mesh);
+  debris.length = 0;
+}
+
+function spawnDebris(pos, col, n) {
+  const mtl = new THREE.MeshStandardMaterial({ color: col, flatShading: true, roughness: 0.8 });
+  for (let i = 0; i < n; i++) {
+    const s = 0.2 + Math.random() * 0.35;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), mtl);
+    m.position.set(pos.x, 0.8 + Math.random() * 0.8, pos.z);
+    m.castShadow = true; scene.add(m);
+    const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 5;
+    debris.push({ mesh: m, vx: Math.cos(a) * sp, vz: Math.sin(a) * sp, vy: 5 + Math.random() * 4, t: 0, rot: (Math.random() - 0.5) * 8 });
+  }
+}
+
+function updateDebris(dt) {
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i]; d.t += dt;
+    d.vy -= 22 * dt;
+    d.mesh.position.x += d.vx * dt; d.mesh.position.z += d.vz * dt; d.mesh.position.y += d.vy * dt;
+    d.mesh.rotation.x += d.rot * dt; d.mesh.rotation.y += d.rot * dt;
+    if (d.mesh.position.y <= 0.1) { d.mesh.position.y = 0.1; d.vy = 0; d.vx *= 0.6; d.vz *= 0.6; }
+    if (d.t > 1.4) { d.mesh.material.transparent = true; d.mesh.material.opacity = Math.max(0, 1 - (d.t - 1.4) / 0.6); }
+    if (d.t > 2.0) { scene.remove(d.mesh); debris.splice(i, 1); }
+  }
 }
 
 // ---------- boss mechanics ----------
@@ -1000,7 +1028,7 @@ function openChest(c) {
 }
 
 function checkClear() {
-  if (mobsAlive <= 0 && !boss) { portalActive = true; player.hp = player.maxHp; player.mana = player.maxMana; player.potions = POTION.max; sfx('portal'); ui.showToast('Глубина зачищена! Портал открыт ↓ (зелья пополнены)', 3); }
+  if (mobsAlive <= 0 && !boss && !portalActive) { portalActive = true; player.hp = player.maxHp; player.mana = player.maxMana; player.potions = POTION.max; sfx('portal'); ui.showToast('Глубина зачищена! Портал открыт ↓ (зелья пополнены)', 3); }
 }
 
 // ---------- map events: altar buff, ambush rune, cursed ground ----------
@@ -1043,31 +1071,35 @@ function buildEvent(kind, x, z) {
 
 function applyTempBuff() {
   const buffs = [
-    { add: { attackDamage: Math.round(player.attackDamage * 0.4) }, msg: '⚔ Алтарь Ярости: +40% урона (25с)', color: '#ff7040' },
-    { add: { moveSpeed: 3, attackSpeed: 0.4 }, msg: '⚡ Алтарь Скорости: +скорость и ск.атаки (20с)', color: '#8fe0ff' },
-    { add: { armor: 15, hpRegen: 20 }, msg: '🛡 Алтарь Защиты: +броня и реген (25с)', color: '#ffd24f' },
-    { add: { lifesteal: 0.15 }, msg: '🩸 Алтарь Крови: +15% вампиризм (25с)', color: '#c86bff' },
+    { stats: { attackDamage: Math.round(player.attackDamage * 0.4) }, msg: '⚔ Алтарь Ярости: +40% урона (25с)', color: '#ff7040' },
+    { stats: { moveSpeed: 3, attackSpeedPct: 0.3 }, msg: '⚡ Алтарь Скорости: +скорость и ск.атаки (20с)', color: '#8fe0ff' },
+    { stats: { armor: 15, hpRegen: 20 }, msg: '🛡 Алтарь Защиты: +броня и реген (25с)', color: '#ffd24f' },
+    { stats: { lifesteal: 0.15 }, msg: '🩸 Алтарь Крови: +15% вампиризм (25с)', color: '#c86bff' },
   ];
   const b = buffs[(Math.random() * buffs.length) | 0];
-  const dur = b.add.attackSpeed ? 20 : 25;
-  for (const k in b.add) player[k] = (player[k] || 0) + b.add[k];
+  const dur = b.stats.attackSpeedPct ? 20 : 25;
+  player.tempStats = player.tempStats || {};
+  for (const k in b.stats) player.tempStats[k] = (player.tempStats[k] || 0) + b.stats[k];
   player._tempBuffs = player._tempBuffs || [];
-  player._tempBuffs.push({ add: b.add, t: dur });
-  player.buffE = Math.max(player.buffE || 0, dur);
+  player._tempBuffs.push({ stats: b.stats, t: dur });
+  recomputeStats(player);
   fx.spawnCastFlash(player.pos, 0xffe066); sfx('level');
   ui.showToast(b.msg, 2.8, b.color); refreshHud();
 }
 
 function tickTempBuffs(dt) {
-  if (!player._tempBuffs) return;
+  if (!player._tempBuffs || !player._tempBuffs.length) return;
+  let changed = false;
   for (let i = player._tempBuffs.length - 1; i >= 0; i--) {
     const b = player._tempBuffs[i]; b.t -= dt;
     if (b.t <= 0) {
-      for (const k in b.add) player[k] = (player[k] || 0) - b.add[k];
+      for (const k in b.stats) { player.tempStats[k] = (player.tempStats[k] || 0) - b.stats[k]; if (Math.abs(player.tempStats[k]) < 1e-6) delete player.tempStats[k]; }
       player._tempBuffs.splice(i, 1);
-      ui.showToast('Благословение иссякло', 1.4); refreshHud();
+      changed = true;
+      ui.showToast('Благословение иссякло', 1.4);
     }
   }
+  if (changed) { recomputeStats(player); refreshHud(); }
 }
 
 function triggerAmbush(ev) {
