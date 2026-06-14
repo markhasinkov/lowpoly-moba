@@ -186,6 +186,17 @@ export class UI {
     ).join('');
   }
 
+  showTalentChoice(opts, onPick) {
+    const ov = document.getElementById('talent-overlay');
+    if (!ov) { onPick(opts[0]); return; }
+    ov.innerHTML = '<h2>\u0412\u044b\u0431\u0435\u0440\u0438 \u0442\u0430\u043b\u0430\u043d\u0442</h2><div class="talent-row">' +
+      opts.map((t, i) => `<div class="talent-card" data-i="${i}"><div class="tc-icon">${t.icon}</div><div class="tc-name">${t.name}</div><div class="tc-desc">${t.desc}</div></div>`).join('') +
+      '</div>';
+    ov.style.display = 'flex';
+    ov.querySelectorAll('.talent-card').forEach(el => el.addEventListener('click', () => onPick(opts[parseInt(el.dataset.i, 10)])));
+  }
+  hideTalentChoice() { const ov = document.getElementById('talent-overlay'); if (ov) ov.style.display = 'none'; }
+
   showGameOver(win) {
     const go = document.getElementById('gameover');
     if (!go) return;

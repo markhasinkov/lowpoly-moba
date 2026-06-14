@@ -12,6 +12,7 @@ import {
 import { generateItem, rollDrop, rarityById } from './loot.js';
 import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
 import { POTION, SHOP_GEAR } from './config.js';
+import { TALENTS, TALENT_LEVELS } from './config.js';
 import { initAudio, resumeAudio, sfx } from './audio.js';
 
 const { scene, renderer, camera } = createScene();
@@ -28,6 +29,8 @@ let quests = [];
 let depth = 1, mobsAlive = 0, portalActive = false;
 let started = false, gameEnded = false, matchTime = 0, hudTimer = 0;
 const clock = new THREE.Clock();
+let paused = false;
+let talentQueue = [];
 const keys = {};
 let camYaw = 0;
 const CAM_DIST = 34, CAM_HEIGHT = 27;
@@ -91,6 +94,7 @@ function grantXp(amount) {
   while (player.level < MAX_LEVEL && player.xp >= xpForLevel(player.level)) {
     player.xp -= xpForLevel(player.level);
     player.level++; player.skillPoints++; leveled = true;
+    if (TALENT_LEVELS.includes(player.level)) talentQueue.push(player.level);
   }
   if (leveled) {
     recomputeStats(player);
@@ -98,6 +102,26 @@ function grantXp(amount) {
     ui.showToast(`Уровень ${player.level}!`, 1.6);
     sfx('level');
   }
+  maybeOpenTalent();
+}
+
+function maybeOpenTalent() {
+  if (paused || talentQueue.length === 0 || !player || !player.alive) return;
+  talentQueue.shift();
+  const pool = TALENTS.slice();
+  const opts = [];
+  for (let i = 0; i < 3 && pool.length; i++) opts.push(pool.splice((Math.random() * pool.length) | 0, 1)[0]);
+  paused = true;
+  ui.showTalentChoice(opts, (t) => pickTalent(t));
+}
+function pickTalent(t) {
+  for (const [k, v] of Object.entries(t.stats)) player.talentStats[k] = (player.talentStats[k] || 0) + v;
+  player.talents.push(t.id);
+  recomputeStats(player);
+  ui.hideTalentChoice();
+  paused = false;
+  sfx('quest'); refreshHud();
+  if (talentQueue.length) maybeOpenTalent();
 }
 
 // ---------- combat ----------
@@ -564,6 +588,7 @@ function startGame(defId) {
   recomputeStats(player);
   player.hp = player.maxHp; player.mana = player.maxMana;
   player.potions = POTION.startCharges; player.potionCd = 0;
+  player.talentStats = {}; player.talents = [];
   ui.callbacks = {
     onEquip: (item) => { equipItem(player, item); ui.refreshInventory(player); refreshHud(); },
     onUnequip: (slot) => { unequip(player, slot); ui.refreshInventory(player); refreshHud(); },
@@ -587,7 +612,7 @@ function animate() {
   const dt = Math.min(0.05, clock.getDelta());
   matchTime += dt;
   if (scene.userData.update) scene.userData.update(matchTime);
-  if (started && !gameEnded) update(dt);
+  if (started && !gameEnded && !paused) update(dt);
   for (let i = entities.length - 1; i >= 0; i--) {
     const e = entities[i];
     animateEntityVisual(e, dt, camera);

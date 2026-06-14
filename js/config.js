@@ -201,3 +201,18 @@ export const SHOP_GEAR = [
   { label: 'Снаряжение (хороший шанс)', bonus: 1, cost: 350 },
   { label: 'Снаряжение (отличный шанс)', bonus: 2, cost: 750 },
 ];
+
+// ===== Talents — choice of permanent bonus at key levels =====
+export const TALENT_LEVELS = [3, 6, 9, 12, 15, 18, 21, 24];
+export const TALENTS = [
+  { id: 'might',    name: 'Мощь',        icon: '🗡️', desc: '+22 к урону',          stats: { attackDamage: 22 } },
+  { id: 'vigor',    name: 'Живучесть',   icon: '❤️', desc: '+220 к здоровью',       stats: { maxHp: 220 } },
+  { id: 'fury',     name: 'Ярость',      icon: '⚡', desc: '+18% скорости атаки',  stats: { attackSpeedPct: 0.18 } },
+  { id: 'deadly',   name: 'Смертоносность', icon: '💥', desc: '+12% шанс крита',     stats: { critChance: 0.12 } },
+  { id: 'brutal',   name: 'Жестокость',  icon: '🎯', desc: '+40% урон крита',      stats: { critMult: 0.40 } },
+  { id: 'vampiric', name: 'Вампиризм',    icon: '🦦', desc: '+12% вампиризм',       stats: { lifesteal: 0.12 } },
+  { id: 'arcane',   name: 'Чародейство', icon: '✨', desc: '+20% урон умений',     stats: { spellAmp: 0.20 } },
+  { id: 'swift',    name: 'Скорость',     icon: '👟', desc: '+1.5 к скорости',       stats: { moveSpeed: 1.5 } },
+  { id: 'haste',    name: 'Ускорение',   icon: '⏱️', desc: '-12% перезарядка',       stats: { cdr: 0.12 } },
+  { id: 'bulwark',  name: 'Оплот',       icon: '🛡️', desc: '+8 к броне',           stats: { armor: 8 } },
+];
