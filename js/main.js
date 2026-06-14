@@ -25,6 +25,7 @@ const entities = [];
 const groundItems = [];
 const pendingStrikes = [];
 const fireZones = [];
+const traps = [];
 let player = null;
 let boss = null;
 const secretChests = [];
@@ -469,6 +470,115 @@ function updateHazards(dt) {
   }
 }
 
+// ---------- environmental traps ----------
+function buildTrap(type, x, z, r) {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  const parts = {};
+  if (type === 'spike') {
+    const base = new THREE.Mesh(new THREE.CircleGeometry(r, 22),
+      new THREE.MeshBasicMaterial({ color: 0x3a2630, transparent: true, opacity: 0.55, side: THREE.DoubleSide }));
+    base.rotation.x = -Math.PI / 2; base.position.y = 0.06; g.add(base);
+    const spikes = [];
+    const sm = new THREE.MeshStandardMaterial({ color: 0xc2c8d2, flatShading: true, roughness: 0.5, metalness: 0.3 });
+    const n = 9;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, rr = r * (0.2 + Math.random() * 0.6);
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.28, 1.8, 5), sm);
+      sp.position.set(Math.cos(a) * rr, 0.0, Math.sin(a) * rr);
+      sp.scale.y = 0.05; sp.castShadow = true; g.add(sp); spikes.push(sp);
+    }
+    parts.base = base; parts.spikes = spikes;
+  } else if (type === 'flame') {
+    const base = new THREE.Mesh(new THREE.CircleGeometry(r, 22),
+      new THREE.MeshBasicMaterial({ color: 0xff5520, transparent: true, opacity: 0.3, side: THREE.DoubleSide }));
+    base.rotation.x = -Math.PI / 2; base.position.y = 0.07; g.add(base);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(r * 0.7, 3.2, 8),
+      new THREE.MeshStandardMaterial({ color: 0xff7a2a, emissive: 0xff5210, emissiveIntensity: 1.2, transparent: true, opacity: 0.85, flatShading: true }));
+    flame.position.y = 1.6; g.add(flame);
+    parts.base = base; parts.flame = flame;
+  } else {
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(r, 14, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: 0x6fdf3a, emissive: 0x2f7a1a, emissiveIntensity: 0.6, transparent: true, opacity: 0.32, flatShading: true }));
+    dome.position.y = 0.05; g.add(dome);
+    const ring = new THREE.Mesh(new THREE.CircleGeometry(r, 20),
+      new THREE.MeshBasicMaterial({ color: 0x6fdf3a, transparent: true, opacity: 0.25, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; g.add(ring);
+    parts.dome = dome;
+  }
+  scene.add(g);
+  return { mesh: g, parts };
+}
+
+function trapDamageInRadius(pos, r, dmg, status) {
+  for (const e of entities) {
+    if (!e.alive) continue;
+    if (e !== player && e.team !== 'enemy') continue;
+    if (Math.hypot(e.pos.x - pos.x, e.pos.z - pos.z) > r) continue;
+    applyDamage(e, dmg, null);
+    if (status && e === player) applyStatus(player, status, dmg);
+    else if (status === 'slow' && e.team === 'enemy') { e.slowT = Math.max(e.slowT || 0, 1.5); e.slowFactor = 0.55; }
+  }
+}
+
+function spawnTraps() {
+  const dmg = Math.round(14 + depth * 4);
+  const count = Math.min(7, 2 + Math.floor(depth / 2));
+  const types = ['spike', 'flame', 'poison'];
+  for (let i = 0; i < count; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const maxR = arenaRadiusAt(a);
+    const dist = (0.25 + Math.random() * 0.55) * maxR;
+    const x = Math.cos(a) * dist, z = Math.sin(a) * dist;
+    if (Math.hypot(x, z) < 14) continue;
+    if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 10) continue;
+    const type = types[(Math.random() * types.length) | 0];
+    const r = type === 'spike' ? 3.6 : type === 'flame' ? 3.0 : 4.0;
+    const built = buildTrap(type, x, z, r);
+    traps.push({ type, mesh: built.mesh, parts: built.parts, pos: new THREE.Vector3(x, 0, z), r, dmg, state: 'idle', st: Math.random() * 1.6, tick: 0 });
+  }
+}
+
+function updateTraps(dt) {
+  for (const tr of traps) {
+    tr.st -= dt;
+    if (tr.type === 'spike') {
+      if (tr.state === 'idle' && tr.st <= 0) { tr.state = 'warn'; tr.st = 0.8; tr.parts.base.material.color.setHex(0xff3030); }
+      else if (tr.state === 'warn' && tr.st <= 0) {
+        tr.state = 'strike'; tr.st = 0.5;
+        for (const sp of tr.parts.spikes) sp.scale.y = 1;
+        for (const sp of tr.parts.spikes) sp.position.y = 0.9;
+        fx.spawnImpact(tr.pos, 0xc2c8d2);
+        trapDamageInRadius(tr.pos, tr.r, tr.dmg, null);
+      } else if (tr.state === 'strike' && tr.st <= 0) {
+        tr.state = 'idle'; tr.st = 1.7 + Math.random() * 0.6;
+        for (const sp of tr.parts.spikes) { sp.scale.y = 0.05; sp.position.y = 0; }
+        tr.parts.base.material.color.setHex(0x3a2630);
+      }
+    } else if (tr.type === 'flame') {
+      if (tr.state === 'idle') {
+        tr.parts.flame.visible = false; tr.parts.flame.scale.setScalar(0.1);
+        if (tr.st <= 0) { tr.state = 'on'; tr.st = 1.6; tr.tick = 0; tr.parts.flame.visible = true; }
+      } else {
+        const k = 0.8 + Math.sin(matchTime * 18) * 0.2;
+        tr.parts.flame.scale.set(k, 1, k);
+        tr.tick -= dt;
+        if (tr.tick <= 0) { trapDamageInRadius(tr.pos, tr.r, tr.dmg * 0.5, 'burn'); tr.tick = 0.4; }
+        if (tr.st <= 0) { tr.state = 'idle'; tr.st = 1.4; }
+      }
+    } else {
+      tr.parts.dome.rotation.y += dt * 0.6;
+      tr.tick -= dt;
+      if (tr.tick <= 0) { trapDamageInRadius(tr.pos, tr.r, tr.dmg * 0.35, 'poison'); tr.tick = 0.6; }
+    }
+  }
+}
+
+function clearTraps() {
+  for (const tr of traps) scene.remove(tr.mesh);
+  traps.length = 0;
+}
+
 // ---------- boss mechanics ----------
 function updateBossMechanics(b, dt) {
   b._mt = (b._mt || 0) + dt;
@@ -502,6 +612,7 @@ function clearEnemies() {
   for (let i = entities.length - 1; i >= 0; i--) if (entities[i].team === 'enemy') removeEntity(entities[i]);
   for (const fzz of fireZones) scene.remove(fzz.mesh);
   fireZones.length = 0; pendingStrikes.length = 0;
+  clearTraps();
   for (const c of secretChests) scene.remove(c.mesh);
   secretChests.length = 0; secretBoss = null; secretRevealed = false;
   for (const n of npcs) scene.remove(n.mesh);
@@ -670,6 +781,7 @@ function spawnDungeon() {
   ui.showToast(`${biome.name} (${ARENA_SHAPE_NAMES[WORLD.shape] || 'круглая'} арена) — глубина ${depth}. ${b.name} ждёт. Зачисти и войди в портал.`, 4);
   maybeSpawnSecrets();
   spawnNpcs();
+  spawnTraps();
   refreshHud();
   setQuestDepth();
 }
@@ -897,7 +1009,7 @@ function animate() {
   }
   updateFloaters(dt);
   if (started) updateCamera(dt);
-  if (started && player) ui.updateMinimap(player, entities, WORLD.portal, npcs, WORLD.shape, WORLD.radius);
+  if (started && player) ui.updateMinimap(player, entities, WORLD.portal, npcs, WORLD.shape, WORLD.radius, traps);
   else { camera.position.set(Math.sin(matchTime * 0.15) * 70, 60, Math.cos(matchTime * 0.15) * 70); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
 }
@@ -925,6 +1037,7 @@ function update(dt) {
   }
 
   updateHazards(dt);
+  updateTraps(dt);
   updateGroundItems(dt);
   updateSecrets(dt);
   updateNpcs(dt);

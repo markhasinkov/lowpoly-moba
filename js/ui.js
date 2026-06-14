@@ -252,7 +252,7 @@ export class UI {
     go.querySelector('h1').textContent = win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ';
   }
 
-  updateMinimap(player, entities, portal, npcs, shape, radius) {
+  updateMinimap(player, entities, portal, npcs, shape, radius, traps) {
     const ctx = this.miniCtx;
     if (!ctx || !player) return;
     const W = this.minimap.width, H = this.minimap.height;
@@ -282,6 +282,15 @@ export class UI {
 
     // portal
     if (portal) { ctx.beginPath(); ctx.strokeStyle = '#5ec8ff'; ctx.lineWidth = 2; ctx.arc(toX(portal.x), toY(portal.z), 4, 0, Math.PI * 2); ctx.stroke(); }
+
+    // traps
+    if (traps) for (const tr of traps) {
+      const col = tr.type === 'spike' ? '#c2c8d2' : tr.type === 'flame' ? '#ff7a2a' : '#6fdf3a';
+      const tx = toX(tr.pos.x), tz = toY(tr.pos.z);
+      ctx.save(); ctx.translate(tx, tz); ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = col; ctx.fillRect(-2.2, -2.2, 4.4, 4.4);
+      ctx.restore();
+    }
 
     // enemies
     for (const e of entities) {
