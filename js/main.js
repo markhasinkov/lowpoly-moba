@@ -14,6 +14,7 @@ import { generateItem, rollDrop, rarityById, combineUpgrade } from './loot.js';
 import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
 import { POTION, SHOP_GEAR } from './config.js';
 import { TALENTS, TALENT_LEVELS, CLASS_TALENTS, BIOME_MOBS, MOB_BY_ID } from './config.js';
+import { arenaShapeForDepth, arenaRadiusAt, ARENA_SHAPE_NAMES } from './config.js';
 import { initAudio, resumeAudio, sfx } from './audio.js';
 
 const { scene, renderer, camera } = createScene();
@@ -76,8 +77,10 @@ function lerpAngle(a, b, t) {
   return a + d * t;
 }
 function clampArena(p) {
+  const ang = Math.atan2(p.z, p.x);
+  const maxR = arenaRadiusAt(ang) - 2;
   const d = Math.hypot(p.x, p.z);
-  if (d > WORLD.radius - 2) { p.x *= (WORLD.radius - 2) / d; p.z *= (WORLD.radius - 2) / d; }
+  if (d > maxR) { p.x *= maxR / d; p.z *= maxR / d; }
 }
 function facingPoint(range) {
   const a = player.mesh.rotation.y;
@@ -644,10 +647,11 @@ function spawnDungeon() {
   clearEnemies();
   portalActive = false;
   const biome = biomeForDepth(depth);
+  WORLD.shape = arenaShapeForDepth(depth);
   scene.userData.buildZone(biome);
   const count = Math.floor(DUNGEON.baseMobCount + depth * DUNGEON.mobPerDepth);
   for (let i = 0; i < count; i++) {
-    const a = Math.random() * Math.PI * 2, r = 18 + Math.random() * (WORLD.radius - 24);
+    const a = Math.random() * Math.PI * 2, r = (0.34 + Math.random() * 0.5) * arenaRadiusAt(a);
     let grade = 'trash';
     const roll = Math.random();
     if (roll > 0.96 - depth * 0.01) grade = 'champion';
@@ -663,7 +667,7 @@ function spawnDungeon() {
   boss = add(createMob(bossSpec(b, WORLD.portal.x, WORLD.portal.z - 6)));
   ui.updateBossBar(boss);
   sfx('boss');
-  ui.showToast(`${biome.name} — глубина ${depth}. ${b.name} ждёт. Зачисти и войди в портал.`, 4);
+  ui.showToast(`${biome.name} (${ARENA_SHAPE_NAMES[WORLD.shape] || 'круглая'} арена) — глубина ${depth}. ${b.name} ждёт. Зачисти и войди в портал.`, 4);
   maybeSpawnSecrets();
   spawnNpcs();
   refreshHud();
@@ -679,7 +683,7 @@ function maybeSpawnSecrets() {
   secretBoss = null; secretRevealed = false;
   if (Math.random() < SECRET.bossChance) {
     const sb = secretBossForDepth(depth);
-    const a = Math.random() * Math.PI * 2, r = WORLD.radius - 9;
+    const a = Math.random() * Math.PI * 2, r = 0.82 * arenaRadiusAt(a);
     const spec = bossSpec(sb, Math.cos(a) * r, Math.sin(a) * r);
     spec.isSecret = true;
     spec.dropRarityMin = 'legendary';
@@ -690,7 +694,7 @@ function maybeSpawnSecrets() {
     secretBoss = add(createMob(spec));
   }
   if (Math.random() < SECRET.chestChance) {
-    const a = Math.random() * Math.PI * 2, r = 14 + Math.random() * (WORLD.radius - 22);
+    const a = Math.random() * Math.PI * 2, r = (0.3 + Math.random() * 0.5) * arenaRadiusAt(a);
     spawnChest(Math.cos(a) * r, Math.sin(a) * r);
   }
 }

@@ -10,7 +10,8 @@ export const COLORS = {
 // Bounded play arena (an outdoor dungeon clearing). Player spawns at centre.
 export const WORLD = {
   size: 120,
-  radius: 58,           // playable circle radius
+  radius: 58,           // base playable radius
+  shape: 'circle',      // current arena shape (set per depth)
   portal: { x: 0, z: -44 }, // exit portal to next depth
 };
 
@@ -407,3 +408,34 @@ export const ENCHANTS = [
   { id: 'execute',   name: 'Казнь', desc: '+50% урона по врагам ниже 25% HP' },
   { id: 'frost',     name: 'Лютый холод', desc: '30% при ударе: заморозка цели' },
 ];
+
+// ===== Arena shapes — vary the playable boundary per depth =====
+// Each shape is an angular radius multiplier of WORLD.radius.
+export const ARENA_SHAPES = ['circle', 'oval', 'corridor', 'blob', 'diamond', 'peanut'];
+export const ARENA_SHAPE_NAMES = {
+  circle: 'круглая', oval: 'овальная', corridor: 'коридор',
+  blob: 'неровная', diamond: 'ромбовидная', peanut: '«восьмёрка»',
+};
+
+export function arenaShapeForDepth(depth) {
+  if (depth <= 1) return 'circle';
+  const k = (depth * 2654435761) >>> 0;
+  return ARENA_SHAPES[k % ARENA_SHAPES.length];
+}
+
+// radius multiplier for a given polar angle (radians)
+export function arenaRadiusMul(shape, ang) {
+  switch (shape) {
+    case 'oval': { const A = 1.34, B = 0.74; return (A * B) / Math.hypot(B * Math.cos(ang), A * Math.sin(ang)); }
+    case 'corridor': { const A = 1.7, B = 0.52; return (A * B) / Math.hypot(B * Math.cos(ang), A * Math.sin(ang)); }
+    case 'blob': return 1 + 0.16 * Math.sin(3 * ang + 0.7) + 0.09 * Math.sin(5 * ang + 2.1);
+    case 'diamond': { const n = 3.2; return Math.pow(Math.pow(Math.abs(Math.cos(ang)), n) + Math.pow(Math.abs(Math.sin(ang)), n), -1 / n); }
+    case 'peanut': return 0.64 + 0.46 * Math.sqrt(Math.max(0, Math.cos(2 * ang)));
+    default: return 1;
+  }
+}
+
+// effective boundary radius at an angle for the current arena
+export function arenaRadiusAt(ang) {
+  return WORLD.radius * arenaRadiusMul(WORLD.shape || 'circle', ang);
+}

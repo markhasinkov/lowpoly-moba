@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { WORLD } from './config.js';
+import { WORLD, arenaRadiusAt } from './config.js';
 import { natureAssets } from './assets.js';
 
 let zoneGroup = null;
@@ -90,7 +90,7 @@ function buildZone(scene, biome) {
   const animated = zoneGroup.userData.animated;
 
   WORLD.radius = biome.radius;
-  WORLD.portal = { x: 0, z: -(biome.radius - 12) };
+  WORLD.portal = { x: 0, z: -(arenaRadiusAt(-Math.PI / 2) - 10) };
 
   // lights + fog tint
   scene.fog.color.setHex(biome.fog.color);
@@ -101,7 +101,7 @@ function buildZone(scene, biome) {
   lights.moon.color.setHex(biome.moon);
   lights.fill.color.setHex(biome.fill);
 
-  const span = biome.radius * 2.6;
+  const span = biome.radius * 3.8;
 
   // sky dome
   const skyGeo = new THREE.SphereGeometry(320, 32, 18);
@@ -139,9 +139,10 @@ function buildZone(scene, biome) {
 
   // boundary stones
   const R = biome.radius;
-  for (let i = 0; i < 64; i++) {
-    const a = (i / 64) * Math.PI * 2;
-    const rr = R + (Math.random() - 0.5) * 2;
+  for (let i = 0; i < 90; i++) {
+    const a = (i / 90) * Math.PI * 2;
+
+    const rr = arenaRadiusAt(a) + (Math.random() - 0.5) * 2;
     const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(2 + Math.random() * 2.5, 0), mat(biome.ground[1]));
     rock.position.set(Math.cos(a) * rr, Math.random() * 1.5, Math.sin(a) * rr);
     rock.rotation.set(Math.random(), Math.random(), Math.random());
@@ -170,7 +171,8 @@ function buildZone(scene, biome) {
     const cats = biome.cats.filter((c) => N[c] && N[c].length);
     for (let i = 0; i < biome.density; i++) {
       const a = rng() * Math.PI * 2;
-      const r = 10 + rng() * (R - 12);
+      const maxr = arenaRadiusAt(a);
+      const r = Math.min(10 + rng() * (maxr - 12), maxr - 3);
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (Math.hypot(x, z) < 12) continue;
       if (Math.hypot(x - WORLD.portal.x, z - WORLD.portal.z) < 9) continue;
