@@ -1,4 +1,5 @@
 import { scaleAbility, MAX_ABILITY_LEVEL, MAX_ULT_LEVEL, xpForLevel, SLOTS, SLOT_NAMES, POTION, SHOP_GEAR } from './config.js';
+import { arenaRadiusMul, ARENA_SHAPE_NAMES } from './config.js';
 import { statLines } from './loot.js';
 
 const CAST_KEY = { Q: '1', W: '2', E: '3', R: '4' };
@@ -30,6 +31,9 @@ export class UI {
     this._shopOpen = false;
     this._forgeOpen = false;
     this.npcPrompt = document.getElementById('npc-prompt');
+    this.minimap = document.getElementById('minimap');
+    this.miniCtx = this.minimap ? this.minimap.getContext('2d') : null;
+    this.miniLabel = document.getElementById('minimap-label');
     this.callbacks = { onEquip: () => {}, onUnequip: () => {}, onLevelAbility: () => {}, onBuyPotion: () => {}, onBuyGear: () => {}, onSell: () => {}, isUpgrade: () => false, onSharpen: () => {}, onCombine: () => {} };
     for (const k of ['Q', 'W', 'E', 'R']) {
       const btn = this.abilityEls[k] && this.abilityEls[k].querySelector('.levelup');
@@ -246,5 +250,56 @@ export class UI {
     if (!go) return;
     go.style.display = 'flex';
     go.querySelector('h1').textContent = win ? 'ПОБЕДА!' : 'ПОРАЖЕНИЕ';
+  }
+
+  updateMinimap(player, entities, portal, npcs, shape, radius) {
+    const ctx = this.miniCtx;
+    if (!ctx || !player) return;
+    const W = this.minimap.width, H = this.minimap.height;
+    const cx = W / 2, cy = H / 2;
+    const pad = 12;
+    const sc = (W / 2 - pad) / (radius * 1.85);
+    const toX = (x) => cx + x * sc;
+    const toY = (z) => cy + z * sc;
+    ctx.clearRect(0, 0, W, H);
+
+    // arena boundary for current shape
+    ctx.beginPath();
+    const N = 72;
+    for (let i = 0; i <= N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const r = radius * arenaRadiusMul(shape || 'circle', a);
+      const x = toX(Math.cos(a) * r), y = toY(Math.sin(a) * r);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(90,120,170,0.16)';
+    ctx.strokeStyle = 'rgba(170,200,240,0.7)';
+    ctx.lineWidth = 1.5;
+    ctx.fill(); ctx.stroke();
+
+    const dot = (x, z, col, r2) => { ctx.beginPath(); ctx.fillStyle = col; ctx.arc(toX(x), toY(z), r2, 0, Math.PI * 2); ctx.fill(); };
+
+    // portal
+    if (portal) { ctx.beginPath(); ctx.strokeStyle = '#5ec8ff'; ctx.lineWidth = 2; ctx.arc(toX(portal.x), toY(portal.z), 4, 0, Math.PI * 2); ctx.stroke(); }
+
+    // enemies
+    for (const e of entities) {
+      if (!e.alive || e.team !== 'enemy') continue;
+      if (e.isBoss) dot(e.pos.x, e.pos.z, e.isSecret ? '#ff5bd0' : '#ff8a2e', 4);
+      else dot(e.pos.x, e.pos.z, '#ff5b4d', 2);
+    }
+    // npcs
+    if (npcs) for (const n of npcs) { if (n.mesh) dot(n.mesh.position.x, n.mesh.position.z, '#ffd24f', 2.5); }
+
+    // player + facing
+    const px = toX(player.pos.x), py = toY(player.pos.z);
+    const ang = player.mesh.rotation.y;
+    ctx.beginPath(); ctx.strokeStyle = '#9be0ff'; ctx.lineWidth = 1.6;
+    ctx.moveTo(px, py); ctx.lineTo(px + Math.sin(ang) * 9, py + Math.cos(ang) * 9); ctx.stroke();
+    dot(player.pos.x, player.pos.z, '#3aa6ff', 3.5);
+    ctx.beginPath(); ctx.strokeStyle = '#dff0ff'; ctx.lineWidth = 1; ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.stroke();
+
+    if (this.miniLabel) this.miniLabel.textContent = ARENA_SHAPE_NAMES[shape] || 'круглая';
   }
 }

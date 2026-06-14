@@ -897,6 +897,7 @@ function animate() {
   }
   updateFloaters(dt);
   if (started) updateCamera(dt);
+  if (started && player) ui.updateMinimap(player, entities, WORLD.portal, npcs, WORLD.shape, WORLD.radius);
   else { camera.position.set(Math.sin(matchTime * 0.15) * 70, 60, Math.cos(matchTime * 0.15) * 70); camera.lookAt(0, 0, 0); }
   renderer.render(scene, camera);
 }
