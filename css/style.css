@@ -94,3 +94,9 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #07090f; f
 
 #help { position: fixed; left: 14px; bottom: 14px; font-size: 11px; line-height: 1.5; color: #8ea4c8; background: rgba(12,16,26,0.6); padding: 8px 12px; border-radius: 10px; z-index: 25; }
 #help b { color: #cfe0ff; }
+
+#quest-tracker { position: fixed; top: 110px; right: 14px; width: 210px; background: rgba(12,16,26,0.7); border: 1px solid rgba(120,150,200,0.25); border-radius: 10px; padding: 8px 12px; z-index: 25; font-size: 12px; }
+#quest-tracker h4 { font-size: 12px; color: #ffd863; margin-bottom: 6px; letter-spacing: 0.04em; }
+#quest-tracker .quest { color: #cfe0ff; margin: 3px 0; display: flex; justify-content: space-between; gap: 6px; }
+#quest-tracker .quest span { color: #8ea4c8; }
+#quest-tracker .quest.done { color: #6fdc8a; text-decoration: line-through; opacity: 0.7; }

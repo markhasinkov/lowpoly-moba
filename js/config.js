@@ -161,6 +161,7 @@ export const MOB_GRADES = {
 export const MOB_TYPES = [
   { id: 'skeleton',  name: 'Скелет',        model: 'minion',  maxHp: 90,  attackDamage: 14, attackRange: 5, attackSpeed: 1.0, armor: 1, moveSpeed: 8,  xp: 22, gold: 6, attackType: 'melee' },
   { id: 'warrior',   name: 'Скелет-воин',   model: 'warrior', maxHp: 150, attackDamage: 20, attackRange: 5, attackSpeed: 0.9, armor: 3, moveSpeed: 7,  xp: 34, gold: 10, attackType: 'melee' },
+  { id: 'skmage',    name: 'Скелет-маг',    model: 'mage',    maxHp: 80,  attackDamage: 17, attackRange: 20, attackSpeed: 0.8, armor: 1, moveSpeed: 7, xp: 40, gold: 13, attackType: 'ranged', projectile: { speed: 34, color: 0xb96bff, radius: 1.1 } },
 ];
 
 // ===== Bosses — graded, leveled, distinct mechanics =====

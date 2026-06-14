@@ -11,6 +11,7 @@ import {
 } from './config.js';
 import { generateItem, rollDrop, rarityById } from './loot.js';
 import { initInventory, recomputeStats, addToInventory, equipItem, unequip, isUpgrade } from './inventory.js';
+import { initAudio, resumeAudio, sfx } from './audio.js';
 
 const { scene, renderer, camera } = createScene();
 const ui = new UI();
@@ -22,6 +23,7 @@ const pendingStrikes = [];
 const fireZones = [];
 let player = null;
 let boss = null;
+let quests = [];
 let depth = 1, mobsAlive = 0, portalActive = false;
 let started = false, gameEnded = false, matchTime = 0, hudTimer = 0;
 const clock = new THREE.Clock();
@@ -91,6 +93,7 @@ function grantXp(amount) {
     recomputeStats(player);
     player.hp = player.maxHp; player.mana = player.maxMana;
     ui.showToast(`Уровень ${player.level}!`, 1.6);
+    sfx('level');
   }
 }
 
@@ -103,6 +106,7 @@ function attack(attacker, target) {
   const isCrit = (attacker.critChance || 0) > 0 && Math.random() < attacker.critChance;
   if (isCrit) dmg *= (attacker.critMult || 1.8);
   const col = attacker.team === 'player' ? 0x8fd0ff : 0xffb088;
+  sfx(isCrit ? 'crit' : 'attack');
   if (attacker.attackType === 'ranged') {
     fx.spawnBasic(attacker, target, dmg, col);
   } else {
@@ -122,6 +126,7 @@ function manualAttack() {
 function applyDamage(target, amount, attacker) {
   const wasAlive = target.alive;
   target.takeDamage(amount, attacker);
+  if (target === player) sfx('hit');
   if (target.isGLTF && target.alive && target.actions && target.actions.hit && target.oneShotT <= 0 && (target._hitCd || 0) <= 0) {
     playHeroAnim(target, 'hit', 0.4); target._hitCd = 0.9;
   }
@@ -150,12 +155,38 @@ function onKill(victim, killer) {
     player.gold += victim.goldBounty || 0;
     const item = rollDrop(victim.isBoss ? 1 : victim.dropChance, victim.itemLevel || depth, victim.rarityBonus || 0, victim.dropRarityMin || null);
     if (item) spawnGroundItem(item, victim.pos);
+    sfx('death');
+    if (item && item.rarity === 'legendary') questProgress('legend');
+    if (victim.grade && victim.grade !== 'trash') questProgress('champ');
+    if (victim.isBoss) questProgress('boss');
     victim.dying = true; victim.deathT = 0;
     if (victim.isBoss) { boss = null; ui.updateBossBar(null); }
     else mobsAlive = Math.max(0, mobsAlive - 1);
     checkClear();
     refreshHud();
   }
+}
+
+function initQuests() {
+  quests = [
+    { id: 'champ', desc: 'Убить элиту/чемпионов', type: 'champ', target: 5, progress: 0, done: false, gold: 250, xp: 350 },
+    { id: 'boss', desc: 'Убить боссов', type: 'boss', target: 3, progress: 0, done: false, gold: 400, xp: 700 },
+    { id: 'depth', desc: 'Достичь глубины 5', type: 'depth', target: 5, progress: 1, done: false, gold: 350, xp: 600 },
+    { id: 'legend', desc: 'Найти легендарный предмет', type: 'legend', target: 1, progress: 0, done: false, gold: 600, xp: 1000 },
+  ];
+  if (ui.renderQuests) ui.renderQuests(quests);
+}
+function completeQuest(q) {
+  q.done = true; player.gold += q.gold; grantXp(q.xp);
+  ui.showToast(`Квест выполнен: ${q.desc} (+${q.gold}💰)`, 2.6, '#ffd863'); sfx('quest');
+}
+function questProgress(type, amount = 1) {
+  for (const q of quests) { if (q.done || q.type !== type) continue; q.progress = Math.min(q.target, q.progress + amount); if (q.progress >= q.target) completeQuest(q); }
+  if (ui.renderQuests) ui.renderQuests(quests);
+}
+function setQuestDepth() {
+  for (const q of quests) { if (q.done || q.type !== 'depth') continue; q.progress = Math.max(q.progress, depth); if (q.progress >= q.target) completeQuest(q); }
+  if (ui.renderQuests) ui.renderQuests(quests);
 }
 
 // ---------- abilities ----------
@@ -174,6 +205,7 @@ function castForHero(hero, key) {
   const aim = facingPoint(Math.min(s.range || 20, 26));
   const dir = new THREE.Vector3(Math.sin(hero.mesh.rotation.y), 0, Math.cos(hero.mesh.rotation.y));
   fx.spawnCastCircle(hero.pos, accent);
+  sfx(ab.type === 'ultimate_guard' || ab.type === 'meteor' || ab.type === 'blink_strike' ? 'ult' : 'cast');
 
   switch (ab.type) {
     case 'projectile':
@@ -276,6 +308,7 @@ function updateGroundItems(dt) {
       if (addToInventory(player, gi.item)) {
         const up = isUpgrade(player, gi.item);
         ui.showToast(`${gi.item.name}${up ? ' ⬆' : ''}`, 1.6, gi.item.color);
+        sfx('pickup');
         scene.remove(gi.mesh); groundItems.splice(i, 1);
         if (ui.isInventoryOpen()) ui.refreshInventory(player);
       }
@@ -358,6 +391,7 @@ function mobSpec(type, grade, x, z) {
   const dmgScale = 1 + depth * DUNGEON.dmgPerDepth;
   return {
     model: type.model, x, z,
+    grade, projectile: type.projectile || null,
     hp: Math.round(type.maxHp * g.hpMul * hpScale),
     attackDamage: Math.round(type.attackDamage * g.dmgMul * dmgScale),
     attackRange: type.attackRange, attackSpeed: type.attackSpeed,
@@ -396,12 +430,14 @@ function spawnDungeon() {
   const b = bossForDepth(depth);
   boss = add(createMob(bossSpec(b, WORLD.portal.x, WORLD.portal.z - 6)));
   ui.updateBossBar(boss);
+  sfx('boss');
   ui.showToast(`Глубина ${depth} — ${b.name} ждёт. Зачисти и войди в портал.`, 4);
   refreshHud();
+  setQuestDepth();
 }
 
 function checkClear() {
-  if (mobsAlive <= 0 && !boss) { portalActive = true; ui.showToast('Портал открыт! Иди к нему ↓', 3); }
+  if (mobsAlive <= 0 && !boss) { portalActive = true; player.hp = player.maxHp; player.mana = player.maxMana; sfx('portal'); ui.showToast('Глубина зачищена! Портал открыт ↓', 3); }
 }
 
 // ---------- floaters (DOM damage numbers) ----------
@@ -504,6 +540,7 @@ function startGame(defId) {
     onLevelAbility: (key) => levelAbility(player, key),
   };
   depth = 1;
+  initAudio(); resumeAudio(); initQuests();
   spawnDungeon();
   camYaw = 0;
   ui.hideClassSelect();

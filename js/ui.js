@@ -160,6 +160,14 @@ export class UI {
     }
   }
 
+  renderQuests(quests) {
+    const el = document.getElementById('quest-tracker');
+    if (!el) return;
+    el.innerHTML = '<h4>Квесты</h4>' + quests.map(q =>
+      `<div class="quest ${q.done ? 'done' : ''}">${q.done ? '✔' : ''} ${q.desc} <span>${Math.min(q.progress, q.target)}/${q.target}</span></div>`
+    ).join('');
+  }
+
   showGameOver(win) {
     const go = document.getElementById('gameover');
     if (!go) return;

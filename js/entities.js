@@ -206,7 +206,7 @@ function createGLTFHero(team, def, asset) {
 }
 
 // ===== Mobs & Bosses (KayKit skeleton models) =====
-const MOB_ATTACK = { minion: '1H_Melee_Attack_Chop', warrior: '2H_Melee_Attack_Chop' };
+const MOB_ATTACK = { minion: '1H_Melee_Attack_Chop', warrior: '2H_Melee_Attack_Chop', mage: 'Spellcast_Shoot' };
 
 function buildSkeleton(spec) {
   const asset = creepAssets[spec.model] || creepAssets.minion || creepAssets.warrior;
@@ -263,6 +263,7 @@ export function createMob(spec) {
   ent.mechanic = spec.mechanic || null;
   ent.dropRarityMin = spec.dropRarityMin || null;
   ent.gradeColor = spec.gradeColor || null;
+  ent.grade = spec.grade || 'trash';
   if (isGLTF) { ent.isGLTF = true; ent.mixer = mixer; ent.actions = actions; ent.currentKey = 'idle'; ent.flashMeshes = flashMeshes; ent.oneShotT = 0; ent._deathStarted = false; }
   return ent;
 }

@@ -14,7 +14,7 @@ const loader = new GLTFLoader();
 
 export async function preloadHeroes(onProgress) {
   const ids = Object.keys(CHAR_FILE);
-  const total = ids.length + 2;
+  const total = ids.length + 3;
   let done = 0;
   for (const id of ids) {
     const gltf = await loader.loadAsync(`assets/characters/${CHAR_FILE[id]}.glb`);
@@ -22,7 +22,7 @@ export async function preloadHeroes(onProgress) {
     done++;
     if (onProgress) onProgress(done, total);
   }
-  for (const [key, file] of [['minion', 'Skeleton_Minion'], ['warrior', 'Skeleton_Warrior']]) {
+  for (const [key, file] of [['minion', 'Skeleton_Minion'], ['warrior', 'Skeleton_Warrior'], ['mage', 'Skeleton_Mage']]) {
     try {
       const m = await loader.loadAsync(`assets/characters/${file}.glb`);
       creepAssets[key] = { scene: m.scene, animations: m.animations };
